@@ -92,7 +92,7 @@ async function uploadImageToSupabaseStorage(file) {
     }
     try {
         const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}_${Math.random().toString(36.substring(2, 7))}.${fileExt}`;
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
         const filePath = `upload_${fileName}`;
 
         const { data, error } = await supabaseClient.storage
