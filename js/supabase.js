@@ -1,119 +1,430 @@
-/**
- * Inisialisasi Supabase Client & Helper CRUD
- */
-let supabaseClient = null;
+const DB = {
+  client: null,
 
-try {
-    if (window.supabase && APP_CONFIG && APP_CONFIG.SUPABASE_URL !== "https://your-project-ref.supabase.co") {
-        supabaseClient = window.supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY);
-    } else {
-        console.warn("[Supabase] URL atau Anon Key belum dikonfigurasi di config.js. Menggunakan mode simulasi/offline lokal.");
+  initImmediate() {
+    if (this.client) return this.client;
+    if (window.supabaseClient) {
+      this.client = window.supabaseClient;
+      return this.client;
     }
-} catch (error) {
-    console.error("[Supabase] Gagal menginisialisasi klien:", error);
-}
 
-window.supabaseClient = supabaseClient;
+    const cfg = window.CONFIG || (typeof CONFIG !== 'undefined' ? CONFIG : null);
+    const sbLib = window.supabase || (typeof supabase !== 'undefined' ? supabase : null);
 
-/**
- * Helper Universal Mengambil Seluruh Baris Tabel dari Supabase dengan Fallback Cache Lokal
- */
-async function fetchAllRows(tableName, cacheKey) {
-    try {
-        if (!supabaseClient) throw new Error("Supabase tidak aktif");
-        const { data, error } = await supabaseClient.from(tableName).select('*');
-        if (error) throw error;
-        if (data) {
-            localStorage.setItem(`cbt_cache_${cacheKey}`, JSON.stringify(data));
-            return data;
+    if (sbLib && sbLib.createClient && cfg && cfg.SUPABASE_URL && cfg.SUPABASE_KEY) {
+      try {
+        window.supabaseClient = sbLib.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
+        this.client = window.supabaseClient;
+        console.log("[DB] Berhasil terhubung ke Supabase:", cfg.SUPABASE_URL);
+        return this.client;
+      } catch (e) {
+        console.error("[DB] Gagal membuat client Supabase:", e.message);
+      }
+    }
+    return null;
+  },
+
+  async getClient() {
+    const immediate = this.initImmediate();
+    if (immediate) return immediate;
+
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        const client = this.initImmediate();
+        if (client) {
+          clearInterval(interval);
+          resolve(client);
+          return;
         }
-    } catch (err) {
-        console.warn(`[CBT Offline] Gagal fetch ${tableName} dari server, membaca cache lokal:`, err);
-        const cached = localStorage.getItem(`cbt_cache_${cacheKey}`);
-        if (cached) {
-            return JSON.parse(cached);
+        if (attempts >= 30) {
+          clearInterval(interval);
+          console.error("[DB] Timeout: Library Supabase atau config.js tidak ditemukan/key kosong.");
+          resolve(null);
         }
-    }
-    return [];
-}
+      }, 100);
+    });
+  },
 
-/**
- * Mengambil Jadwal Ujian Aktif Berdasarkan Kelas Siswa
- */
-async function fetchSchedulesForClass(className) {
-    try {
-        if (!supabaseClient) throw new Error("Supabase tidak aktif");
-        const { data, error } = await supabaseClient
-            .from('jadwal_ujian')
-            .select('*')
-            .ilike('kelas', `%${className}%`);
-        if (error) throw error;
-        if (data) {
-            localStorage.setItem(`cbt_cache_jadwal_${className}`, JSON.stringify(data));
-            return data;
+  // --- HELPER PAGINATION: AMBIL SELURUH DATA TANPA BATAS 1000 BARIS SUPABASE ---
+  async fetchAllRows(tableName, orderCol = 'id', ascending = true) {
+    const client = await this.getClient();
+    if (!client) return [];
+
+    let allRows = [];
+    let from = 0;
+    const step = 1000;
+
+    while (true) {
+      let query = client.from(tableName).select('*');
+      if (orderCol) {
+        query = query.order(orderCol, { ascending });
+      }
+      const { data, error } = await query.range(from, from + step - 1);
+
+      if (error) {
+        // Fallback jika kolom orderCol tidak ada di tabel
+        if (from === 0 && orderCol) {
+          const fallbackRes = await client.from(tableName).select('*').range(0, step - 1);
+          if (!fallbackRes.error && fallbackRes.data) {
+            return fallbackRes.data;
+          }
         }
-    } catch (err) {
-        const cached = localStorage.getItem(`cbt_cache_jadwal_${className}`);
-        if (cached) return JSON.parse(cached);
-    }
-    return [];
-}
+        console.warn(`[DB Helper] Gagal fetch tabel ${tableName}:`, error.message);
+        break;
+      }
 
-/**
- * Mengambil Bank Soal untuk Mapel & Kelas tertentu
- */
-async function fetchBankSoalForExam(mapel, kelas) {
+      if (!data || data.length === 0) break;
+      allRows = allRows.concat(data);
+      if (data.length < step) break;
+      from += step;
+    }
+
+    return allRows;
+  },
+
+  // --- MODUL ADMIN / PROKTOR ---
+  async fetchAdmin() {
+    const client = await this.getClient();
+    if (!client) return [];
     try {
-        if (!supabaseClient) throw new Error("Supabase tidak aktif");
-        const { data, error } = await supabaseClient
-            .from('bank_soal')
-            .select('*')
-            .eq('mapel', mapel);
-        if (error) throw error;
-        if (data && data.length > 0) {
-            localStorage.setItem(`cbt_cache_soal_${mapel}_${kelas}`, JSON.stringify(data));
-            return data;
-        }
+      const { data, error } = await client.from('admin').select('*').order('id_admin', { ascending: true });
+      if (error) {
+        console.warn("[DB Helper] Gagal fetch tabel admin:", error.message);
+        return [];
+      }
+      return (data || []).map(a => ({
+        id_admin: a.id_admin || a.ID_ADMIN || a.id,
+        username: String(a.username || a.USERNAME || 'admin').trim(),
+        password: String(a.password || a.PASSWORD || 'admin123').trim(),
+        nama_admin: a.nama_admin || a.NAMA_ADMIN || 'Administrator Proktor',
+        no_hp: String(a.no_hp || a.NO_HP || '-').trim(),
+        status: a.status || a.STATUS || 'Aktif'
+      }));
     } catch (err) {
-        console.warn(`[CBT Offline] Memuat soal dari cache lokal untuk ${mapel}`);
+      console.error("[DB Helper] Error fetchAdmin:", err.message);
+      return [];
     }
-    
-    const localSoal = localStorage.getItem(`cbt_cache_soal_${mapel}_${kelas}`) || localStorage.getItem(`cbt_cache_soal_${mapel}`);
-    return localSoal ? JSON.parse(localSoal) : [];
-}
+  },
 
-/**
- * Mengunggah Gambar Soal ke Supabase Storage
- */
-async function uploadImageToSupabaseStorage(file) {
-    if (!supabaseClient) {
-        alert("Supabase Storage belum dikonfigurasi. Unggah gambar memerlukan koneksi server.");
-        return null;
-    }
+  async insertAdmin(payload) {
+    const client = await this.getClient();
+    if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
+    const { data, error } = await client.from('admin').insert([payload]);
+    if (error) throw error;
+    return data;
+  },
+
+  // --- MODUL MAPEL ---
+  async fetchMapel() {
+    const client = await this.getClient();
+    if (!client) return [];
     try {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-        const filePath = `upload_${fileName}`;
-
-        const { data, error } = await supabaseClient.storage
-            .from(APP_CONFIG.STORAGE_BUCKET)
-            .upload(filePath, file);
-
-        if (error) throw error;
-
-        const { data: publicUrlData } = supabaseClient.storage
-            .from(APP_CONFIG.STORAGE_BUCKET)
-            .getPublicUrl(filePath);
-
-        return publicUrlData.publicUrl;
+      const { data, error } = await client.from('mapel').select('*').order('id', { ascending: true });
+      if (error) return [];
+      return data ? data.map(m => m.nama_mapel || m.mapel || m.NAMA_MAPEL || m.nama || Object.values(m)[1]).filter(Boolean) : [];
     } catch (err) {
-        console.error("Gagal mengunggah gambar:", err);
-        alert("Gagal mengunggah gambar ke Supabase Storage: " + err.message);
-        return null;
+      return [];
     }
-}
+  },
 
-window.fetchAllRows = fetchAllRows;
-window.fetchSchedulesForClass = fetchSchedulesForClass;
-window.fetchBankSoalForExam = fetchBankSoalForExam;
-window.uploadImageToSupabaseStorage = uploadImageToSupabaseStorage;
+  async insertMapel(namaMapel) {
+    const client = await this.getClient();
+    if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
+
+    let { data, error } = await client.from('mapel').insert([{ nama_mapel: namaMapel }]);
+    if (error && error.code === '23505') {
+      const { data: allMapel } = await client.from('mapel').select('id').order('id', { ascending: false }).limit(1);
+      const maxId = (allMapel && allMapel.length > 0) ? (parseInt(allMapel[0].id) || 0) + 1 : 1;
+
+      const resManual = await client.from('mapel').insert([{ id: maxId, nama_mapel: namaMapel }]);
+      if (resManual.error) {
+        const resManual2 = await client.from('mapel').insert([{ id: maxId, mapel: namaMapel }]);
+        if (resManual2.error) throw resManual2.error;
+        return resManual2.data;
+      }
+      return resManual.data;
+    }
+
+    if (error) {
+      const res2 = await client.from('mapel').insert([{ mapel: namaMapel }]);
+      if (res2.error) {
+        const res3 = await client.from('mapel').insert([{ NAMA_MAPEL: namaMapel }]);
+        if (res3.error) throw error;
+        return res3.data;
+      }
+      return res2.data;
+    }
+    return data;
+  },
+
+  async deleteMapel(namaMapel) {
+    const client = await this.getClient();
+    if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
+
+    const { error: err1 } = await client.from('mapel').delete().eq('nama_mapel', namaMapel);
+    if (err1) {
+      const { error: err2 } = await client.from('mapel').delete().eq('mapel', namaMapel);
+      if (err2) {
+        await client.from('mapel').delete().eq('NAMA_MAPEL', namaMapel);
+      }
+    }
+    return true;
+  },
+
+  // --- MODUL GURU & PENGAWAS ---
+  async fetchGuru() {
+    const client = await this.getClient();
+    if (!client) return [];
+    try {
+      const { data, error } = await client.from('guru').select('*').order('id_guru', { ascending: true });
+      if (error) {
+        console.warn("[DB Helper] Gagal fetch tabel guru:", error.message);
+        return [];
+      }
+      return (data || []).map(g => ({
+        id_guru: g.id_guru || g.ID_GURU || g.id,
+        nama_guru: g.nama_guru || g.NAMA_GURU || g.nama || '-',
+        nip: String(g.nip || g.NIP || '-').trim(),
+        no_hp: String(g.no_hp || g.NO_HP || g.telepon || '').trim(),
+        password: String(g.password || g.PASSWORD || 'guru123').trim(),
+        jabatan: g.jabatan || g.JABATAN || 'Guru Mata Pelajaran',
+        mapel_diampu: g.mapel_diampu || g.MAPEL_DIAMPU || '-',
+        kelas_diampu: g.kelas_diampu || g.KELAS_DIAMPU || '-',
+        status_kepegawaian: g.status_kepegawaian || g.STATUS_KEPEGAWAIAN || 'PNS',
+        status: g.status || g.STATUS || 'Aktif'
+      }));
+    } catch (err) {
+      console.error("[DB Helper] Error fetchGuru:", err.message);
+      return [];
+    }
+  },
+
+  async insertGuru(payload) {
+    const client = await this.getClient();
+    if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
+    const { data, error } = await client.from('guru').insert([payload]);
+    if (error) throw error;
+    return data;
+  },
+
+  async updateGuru(id_guru, payload) {
+    const client = await this.getClient();
+    if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
+    const { data, error } = await client.from('guru').update(payload).eq('id_guru', id_guru);
+    if (error) {
+      const resCap = await client.from('guru').update(payload).eq('ID_GURU', id_guru);
+      if (resCap.error) {
+        const resId = await client.from('guru').update(payload).eq('id', id_guru);
+        if (resId.error) throw error;
+        return resId.data;
+      }
+      return resCap.data;
+    }
+    return data;
+  },
+
+  async deleteGuru(id_guru) {
+    const client = await this.getClient();
+    if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
+    const { error } = await client.from('guru').delete().eq('id_guru', id_guru);
+    if (error) {
+      const resCap = await client.from('guru').delete().eq('ID_GURU', id_guru);
+      if (resCap.error) {
+        const resId = await client.from('guru').delete().eq('id', id_guru);
+        if (resId.error) throw error;
+      }
+    }
+    return true;
+  },
+
+  // --- MODUL SISWA (AMBIL SELURUH DATA TANPA BATAS 1000 BARIS) ---
+  async fetchSiswa() {
+    const client = await this.getClient();
+    if (!client) return [];
+    try {
+      const dataSiswa = await this.fetchAllRows('siswa', null, true);
+      let dataAkun = [];
+      try {
+        dataAkun = await this.fetchAllRows('akun_siswa', null, true);
+      } catch (e) {}
+
+      return (dataSiswa || []).map(s => {
+        const akun = dataAkun.find(a => (a.ID_SISWA || a.id_siswa) === (s.ID_SISWA || s.id_siswa));
+        return {
+          id_siswa: s.ID_SISWA || s.id_siswa || s.id,
+          nisn: String(s.NISN || s.nisn || '-').trim(),
+          nama: s.NAMA_SISWA || s.nama_siswa || s.nama || '-',
+          kelas: s.KELAS || s.kelas || '-',
+          status: s.STATUS || s.status || 'Aktif',
+          ttl: s.TTL || s.ttl || '-',
+          user: String(akun ? akun.username : (s.NISN || s.nisn || 'user')).trim(),
+          pass: String(akun ? akun.password : 'smk123').trim()
+        };
+      });
+    } catch (err) {
+      return [];
+    }
+  },
+
+  // --- MODUL BANK SOAL (AMBIL SELURUH DATA TANPA BATAS 1000 BARIS) ---
+  async fetchBankSoal() {
+    const client = await this.getClient();
+    if (!client) return [];
+    try {
+      return await this.fetchAllRows('bank_soal', 'id', true);
+    } catch (err) {
+      return [];
+    }
+  },
+
+  // --- MODUL JADWAL UJIAN ---
+  async fetchSchedules() {
+    const client = await this.getClient();
+    if (!client) return [];
+    try {
+      const { data, error } = await client.from('jadwal_ujian').select('*').order('id', { ascending: false });
+      if (error) return [];
+      return (data || []).map(j => ({
+        id: j.id || j.ID,
+        mapel: j.mapel || j.MAPEL || j.nama_mapel || j.NAMA_MAPEL || '-',
+        kelas: j.kelas || j.KELAS || '-',
+        tanggal: j.tanggal || j.TANGGAL || '-',
+        durasi: j.durasi || j.DURASI || 45,
+        jamMulai: j.jam_mulai || j.JAM_MULAI || j.jamMulai || '07:30',
+        jamSelesai: j.jam_selesai || j.JAM_SELESAI || j.jamSelesai || '09:00'
+      }));
+    } catch (err) {
+      return [];
+    }
+  },
+
+  async fetchActiveScheduleForStudent(kelasSiswa) {
+    const schedules = await this.fetchSchedules();
+    if (!schedules || schedules.length === 0) return null;
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const currentDateStr = `${year}-${month}-${day}`;
+
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const currentTimeStr = `${hours}:${minutes}`;
+
+    const activeSchedule = schedules.find(j => {
+      const listOfKelasTarget = String(j.kelas).toUpperCase().split(',').map(k => k.trim());
+      const matchKelas = listOfKelasTarget.includes(String(kelasSiswa).trim().toUpperCase());
+      const matchTanggal = String(j.tanggal).trim() === currentDateStr;
+      
+      const jamMulaiClean = String(j.jamMulai).substring(0, 5);
+      const jamSelesaiClean = String(j.jamSelesai).substring(0, 5);
+      
+      const inTimeRange = currentTimeStr >= jamMulaiClean && currentTimeStr <= jamSelesaiClean;
+
+      return matchKelas && matchTanggal && inTimeRange;
+    });
+
+    return activeSchedule || null;
+  },
+
+  // --- MODUL HASIL UJIAN (AMBIL SELURUH DATA TANPA BATAS 1000 BARIS) ---
+  async fetchHasilUjian() {
+    const client = await this.getClient();
+    if (!client) return [];
+    try {
+      const data = await this.fetchAllRows('hasil_ujian', 'id', true);
+      
+      return (data || []).map(h => ({
+        id: h.id || h.ID,
+        ID_SISWA: h.ID_SISWA || h.id_siswa || h.nisn || '-',
+        nama_siswa: h.nama_siswa || h.NAMA_SISWA || h.nama || '-',
+        kelas: h.kelas || h.KELAS || '-',
+        mapel: h.mapel || h.MAPEL || '-',
+        nilai: h.nilai !== undefined ? h.nilai : (h.NILAI !== undefined ? h.NILAI : 0),
+        jumlah_pelanggaran: h.jumlah_pelanggaran !== undefined ? h.jumlah_pelanggaran : 0,
+        status_selesai: h.status_selesai || h.STATUS_SELESAI || 'SELESAI',
+        waktu_selesai: h.waktu_selesai || h.WAKTU_SELESAI || new Date().toISOString()
+      }));
+    } catch (err) {
+      return [];
+    }
+  },
+
+  async insertHasilUjian(payload) {
+    const client = await this.getClient();
+    if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
+
+    const rawId = String(payload.id_siswa || '').trim();
+    const numericId = /^\d+$/.test(rawId) ? Number(rawId) : null;
+
+    const attempts = [
+      // 1. Kolom kapital ID_SISWA (angka) + lengkap
+      ...(numericId !== null ? [{
+        ID_SISWA: numericId,
+        nama_siswa: payload.nama_siswa,
+        kelas: payload.kelas,
+        mapel: payload.mapel,
+        nilai: payload.nilai,
+        jumlah_pelanggaran: payload.jumlah_pelanggaran,
+        status_selesai: payload.status_selesai,
+        waktu_selesai: payload.waktu_selesai
+      }] : []),
+      // 2. Kolom kapital ID_SISWA (string) + lengkap
+      {
+        ID_SISWA: rawId,
+        nama_siswa: payload.nama_siswa,
+        kelas: payload.kelas,
+        mapel: payload.mapel,
+        nilai: payload.nilai,
+        jumlah_pelanggaran: payload.jumlah_pelanggaran,
+        status_selesai: payload.status_selesai,
+        waktu_selesai: payload.waktu_selesai
+      },
+      // 3. Kolom huruf kecil id_siswa + lengkap
+      {
+        id_siswa: numericId !== null ? numericId : rawId,
+        nama_siswa: payload.nama_siswa,
+        kelas: payload.kelas,
+        mapel: payload.mapel,
+        nilai: payload.nilai,
+        jumlah_pelanggaran: payload.jumlah_pelanggaran,
+        status_selesai: payload.status_selesai,
+        waktu_selesai: payload.waktu_selesai
+      },
+      // 4. Minimal kolom wajib saja (ID_SISWA)
+      {
+        ID_SISWA: numericId !== null ? numericId : rawId,
+        mapel: payload.mapel,
+        nilai: payload.nilai,
+        jumlah_pelanggaran: payload.jumlah_pelanggaran,
+        status_selesai: payload.status_selesai
+      }
+    ];
+
+    let lastError = null;
+    for (const candidate of attempts) {
+      const { data, error } = await client.from('hasil_ujian').insert([candidate]).select();
+      if (!error) return data;
+      lastError = error;
+    }
+
+    throw lastError || new Error("Gagal insert ke tabel hasil_ujian");
+  },
+
+  async deleteHasilUjian(id) {
+    const client = await this.getClient();
+    if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
+    const { error } = await client.from('hasil_ujian').delete().eq('id', id);
+    if (error) {
+      const { error: errCap } = await client.from('hasil_ujian').delete().eq('ID', id);
+      if (errCap) throw errCap;
+    }
+    return true;
+  }
+};
+
+window.DB = DB;
+DB.initImmediate();

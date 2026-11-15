@@ -1,175 +1,148 @@
-/**
- * Sistem Autentikasi Multi-Role & Offline Fallback
- */
+const AuthModule = {
+  SAVED_STUDENTS_KEY: 'cbt_saved_students_smkn1wkt_v1',
 
-function switchLoginRole(role) {
-    const btnSiswa = document.getElementById('tab-role-siswa');
-    const btnStaff = document.getElementById('tab-role-staff');
-    const formSiswa = document.getElementById('form-login-siswa');
-    const formStaff = document.getElementById('form-login-staff');
-
-    if (role === 'siswa') {
-        State.currentRole = 'siswa';
-        btnSiswa.className = "py-2.5 text-sm font-bold rounded-lg bg-white text-blue-900 shadow-sm transition";
-        btnStaff.className = "py-2.5 text-sm font-semibold rounded-lg text-slate-600 hover:text-slate-900 transition";
-        formSiswa.classList.remove('hidden');
-        formStaff.classList.add('hidden');
-    } else {
-        State.currentRole = 'staff';
-        btnSiswa.className = "py-2.5 text-sm font-semibold rounded-lg text-slate-600 hover:text-slate-900 transition";
-        btnStaff.className = "py-2.5 text-sm font-bold rounded-lg bg-white text-blue-900 shadow-sm transition";
-        formSiswa.classList.add('hidden');
-        formStaff.classList.remove('hidden');
-    }
-}
-
-async function handleStudentLogin(event) {
-    event.preventDefault();
-    const nisn = document.getElementById('login-nisn').value.trim();
-    const password = document.getElementById('login-siswa-pass').value.trim();
-
-    showToast("Memeriksa kredensial peserta...", "info");
-
-    let student = null;
-
-    // 1. Coba verifikasi ke server Supabase jika online
-    if (navigator.onLine && supabaseClient) {
-        try {
-            const { data, error } = await supabaseClient
-                .from('siswa')
-                .select('*')
-                .eq('nisn', nisn)
-                .single();
-            
-            if (data) {
-                if (data.password === password) {
-                    student = data;
-                    // Simpan cache profil siswa di localStorage untuk login offline berikutnya
-                    localStorage.setItem(`cbt_student_${nisn}`, JSON.stringify(data));
-                } else {
-                    showToast("Password atau PIN ujian salah!", "error");
-                    return;
-                }
-            }
-        } catch (err) {
-            console.warn("[Auth] Gagal verifikasi online, mencoba cache offline:", err);
-        }
-    }
-
-    // 2. Fallback verifikasi cache offline jika server tidak dapat dijangkau
-    if (!student) {
-        const cachedStudent = localStorage.getItem(`cbt_student_${nisn}`);
-        if (cachedStudent) {
-            const parsed = JSON.parse(cachedStudent);
-            if (parsed.password === password) {
-                student = parsed;
-                showToast("Login berhasil via Cache Offline.", "info");
-            } else {
-                showToast("Password salah (Mode Offline).", "error");
-                return;
-            }
-        } else {
-            showToast("Data siswa tidak ditemukan. Pastikan sudah pernah login secara online atau hubungi proktor.", "error");
-            return;
-        }
-    }
-
-    if (student) {
-        State.currentUser = {
-            id: student.id,
-            nisn: student.nisn,
-            nama: student.nama,
-            kelas: student.kelas,
-            role: 'siswa'
-        };
-        localStorage.setItem('cbt_active_session', JSON.stringify(State.currentUser));
-        showToast(`Selamat datang, ${student.nama}!`, "success");
-        showScreen('screen-student-lobby');
-        if (typeof renderStudentLobby === 'function') renderStudentLobby();
-    }
-}
-
-async function handleStaffLogin(event) {
-    event.preventDefault();
-    const identifier = document.getElementById('login-staff-id').value.trim();
-    const password = document.getElementById('login-staff-pass').value.trim();
-
-    showToast("Memverifikasi akun staff...", "info");
-
-    if (!supabaseClient) {
-        // Fallback akun default admin jika Supabase belum dikonfigurasi
-        if (identifier === 'admin' && password === 'admin123') {
-            State.currentUser = { id: 'admin-default', nama: 'Administrator Utama', role: 'admin' };
-            localStorage.setItem('cbt_active_session', JSON.stringify(State.currentUser));
-            showScreen('screen-admin');
-            if (typeof initAdminDashboard === 'function') initAdminDashboard();
-            return;
-        }
-        showToast("Supabase belum dikonfigurasi untuk login staff.", "error");
-        return;
-    }
-
+  saveStudentProfileLocally(student) {
+    if (!student) return;
     try {
-        // Cek tabel admin
-        const { data: adminData } = await supabaseClient
-            .from('admin')
-            .select('*')
-            .eq('username', identifier)
-            .single();
+      const raw = localStorage.getItem(this.SAVED_STUDENTS_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      const filtered = list.filter(item =>
+        String(item.nisn || '').trim() !== String(student.nisn || '').trim() &&
+        String(item.user || '').trim() !== String(student.user || '').trim()
+      );
+      filtered.push({
+        id_siswa: student.id_siswa,
+        nisn: student.nisn,
+        nama: student.nama,
+        kelas: student.kelas,
+        status: student.status,
+        ttl: student.ttl,
+        user: student.user,
+        pass: student.pass,
+        savedAt: Date.now()
+      });
+      localStorage.setItem(this.SAVED_STUDENTS_KEY, JSON.stringify(filtered));
+    } catch (e) {}
+  },
 
-        if (adminData && adminData.password === password) {
-            State.currentUser = {
-                id: adminData.id,
-                nama: adminData.nama_admin,
-                role: 'admin'
-            };
-            localStorage.setItem('cbt_active_session', JSON.stringify(State.currentUser));
-            showScreen('screen-admin');
-            if (typeof initAdminDashboard === 'function') initAdminDashboard();
-            return;
-        }
-
-        // Cek tabel guru (berdasarkan NIP)
-        const { data: guruData } = await supabaseClient
-            .from('guru')
-            .select('*')
-            .eq('nip', identifier)
-            .single();
-
-        if (guruData && guruData.password === password) {
-            State.currentUser = {
-                id: guruData.id,
-                nama: guruData.nama_guru,
-                nip: guruData.nip,
-                mapel: guruData.mapel,
-                kelas: guruData.kelas,
-                role: 'guru'
-            };
-            localStorage.setItem('cbt_active_session', JSON.stringify(State.currentUser));
-            showScreen('screen-admin');
-            if (typeof initAdminDashboard === 'function') initAdminDashboard();
-            return;
-        }
-
-        showToast("Username/NIP atau password salah!", "error");
-    } catch (err) {
-        console.error("Login staff error:", err);
-        showToast("Terjadi kesalahan saat login ke server.", "error");
+  findLocalStudent(usernameInput, passwordInput) {
+    try {
+      const raw = localStorage.getItem(this.SAVED_STUDENTS_KEY);
+      if (!raw) return null;
+      const list = JSON.parse(raw);
+      return list.find(s =>
+        (String(s.nisn || '').trim() === usernameInput || String(s.user || '').trim() === usernameInput) &&
+        String(s.pass || '').trim() === passwordInput
+      ) || null;
+    } catch (e) {
+      return null;
     }
-}
+  },
 
-function logoutUser() {
-    if (confirm("Apakah Anda yakin ingin keluar dari sesi ini?")) {
-        localStorage.removeItem('cbt_active_session');
-        State.currentUser = null;
-        State.examActive = null;
-        if (State.timerInterval) clearInterval(State.timerInterval);
-        showScreen('screen-login');
-        showToast("Berhasil keluar sesi.", "info");
+  async login(e) {
+    if (e && e.preventDefault) e.preventDefault();
+
+    const usernameInput = String(document.getElementById('login-username')?.value || '').trim();
+    const passwordInput = String(document.getElementById('login-password')?.value || '').trim();
+
+    if (!usernameInput || !passwordInput) {
+      alert("Silakan isi Username / NISN / No. HP dan Password!");
+      return;
     }
-}
 
-window.switchLoginRole = switchLoginRole;
-window.handleStudentLogin = handleStudentLogin;
-window.handleStaffLogin = handleStaffLogin;
-window.logoutUser = logoutUser;
+    // 1. CEK AKUN ADMIN DI SUPABASE
+    try {
+      if (typeof DB !== 'undefined' && DB.fetchAdmin && navigator.onLine) {
+        const listAdmin = await DB.fetchAdmin();
+        const foundAdmin = listAdmin.find(a => a.username === usernameInput && a.password === passwordInput);
+        if (foundAdmin) {
+          if (String(foundAdmin.status).toLowerCase() !== 'aktif') {
+            alert("Akun Admin ini berstatus Non-Aktif.");
+            return;
+          }
+          State.currentUser = { ...foundAdmin, role: 'admin', nama: foundAdmin.nama_admin };
+          alert(`Selamat Datang Administrator: ${foundAdmin.nama_admin}`);
+          App.showScreen('admin');
+          App.switchAdminTab('monitoring');
+          return;
+        }
+      }
+    } catch (err) {}
+
+    // 2. FALLBACK CONFIG.JS ADMIN (admin / admin123)
+    const cfg = window.CONFIG || (typeof CONFIG !== 'undefined' ? CONFIG : null);
+    if (cfg && usernameInput === String(cfg.ADMIN_USER) && passwordInput === String(cfg.ADMIN_PASS)) {
+      State.currentUser = { role: 'admin', nama: 'Proktor Utama' };
+      alert("Selamat Datang, Administrator Proktor!");
+      App.showScreen('admin');
+      App.switchAdminTab('monitoring');
+      return;
+    }
+
+    // 3. CEK AKUN GURU DI SUPABASE
+    try {
+      if (typeof DB !== 'undefined' && DB.fetchGuru && navigator.onLine) {
+        const listGuru = await DB.fetchGuru();
+        const foundGuru = listGuru.find(g => 
+          (g.no_hp === usernameInput || g.nip === usernameInput) && g.password === passwordInput
+        );
+        if (foundGuru) {
+          if (String(foundGuru.status).toLowerCase() !== 'aktif') {
+            alert("Akun Guru Anda berstatus Non-Aktif.");
+            return;
+          }
+          State.currentUser = { ...foundGuru, role: 'guru' };
+          alert(`Selamat Datang Pak/Ibu Guru: ${foundGuru.nama_guru}`);
+          App.showScreen('admin');
+          App.switchAdminTab('bank-soal');
+          return;
+        }
+      }
+    } catch (err) {}
+
+    // 4. CEK AKUN SISWA (ONLINE DULU, FALLBACK KE CACHE LOKAL JIKA OFFLINE)
+    let foundSiswa = null;
+    try {
+      if (typeof DB !== 'undefined' && DB.fetchSiswa && navigator.onLine) {
+        const listSiswa = await DB.fetchSiswa();
+        foundSiswa = listSiswa.find(s => 
+          (String(s.nisn).trim() === usernameInput || String(s.user).trim() === usernameInput) && 
+          String(s.pass).trim() === passwordInput
+        ) || null;
+      }
+    } catch (err) {}
+
+    if (!foundSiswa) {
+      foundSiswa = this.findLocalStudent(usernameInput, passwordInput);
+    }
+
+    if (foundSiswa) {
+      if (String(foundSiswa.status).toLowerCase() !== 'aktif') {
+        alert("Status akun Anda Non-Aktif. Hubungi panitia ujian.");
+        return;
+      }
+      this.saveStudentProfileLocally(foundSiswa);
+      State.currentUser = { ...foundSiswa, role: 'siswa' };
+
+      App.showScreen('student-lobby');
+      if (typeof ExamModule !== 'undefined' && ExamModule.openStudentLobby) {
+        await ExamModule.openStudentLobby();
+      }
+      return;
+    }
+
+    if (!navigator.onLine) {
+      alert("Login Offline Gagal!\n\nPerangkat sedang offline dan akun Anda belum pernah login di perangkat ini. Silakan hubungkan ke internet terlebih dahulu.");
+    } else {
+      alert("Login Gagal! Periksa kembali Username/NISN/No. HP dan Password Anda.");
+    }
+  },
+
+  logout() {
+    State.currentUser = null;
+    State.examActive = false;
+    App.showScreen('login');
+  }
+};
+
+window.AuthModule = AuthModule;

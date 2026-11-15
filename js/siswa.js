@@ -1,127 +1,135 @@
-/**
- * Manajemen Data Siswa & Fitur Cetak Kartu Peserta
- */
-
-async function renderSiswaTable() {
-    const tbody = document.getElementById('siswa-table-body');
-    const countLabel = document.getElementById('siswa-total-label');
-    const searchKeyword = (document.getElementById('siswa-search-input')?.value || '').toLowerCase();
-    if (!tbody) return;
-
-    const data = await fetchAllRows('siswa', 'siswa');
-    const filtered = data.filter(s => 
-        s.nisn.toLowerCase().includes(searchKeyword) ||
-        s.nama.toLowerCase().includes(searchKeyword) ||
-        s.kelas.toLowerCase().includes(searchKeyword)
-    );
-
-    if (countLabel) countLabel.textContent = `${filtered.length} Peserta`;
-
-    if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-6 text-center text-slate-500">Tidak ada data siswa ditemukan.</td></tr>`;
-        return;
-    }
-
-    let html = '';
-    filtered.forEach(s => {
-        html += `
-            <tr class="hover:bg-slate-50 transition border-b border-slate-100">
-                <td class="px-4 py-3 font-mono font-bold text-slate-800">${s.nisn}</td>
-                <td class="px-4 py-3 font-bold text-slate-900">${s.nama}</td>
-                <td class="px-4 py-3 text-blue-800 font-semibold">${s.kelas}</td>
-                <td class="px-4 py-3 font-mono text-slate-600">${s.password}</td>
-                <td class="px-4 py-3 text-right">
-                    <button onclick="deleteSiswa('${s.id}')" class="text-rose-600 hover:underline font-bold text-xs">Hapus</button>
-                </td>
-            </tr>
-        `;
-    });
-    tbody.innerHTML = html;
-}
-
-async function handleAddSiswa(event) {
-    event.preventDefault();
-    const nisn = document.getElementById('siswa-nisn').value.trim();
-    const nama = document.getElementById('siswa-nama').value.trim();
-    const kelas = document.getElementById('siswa-kelas').value.trim();
-    const password = document.getElementById('siswa-pass').value.trim();
-
-    if (!supabaseClient) {
-        showToast("Supabase tidak aktif.", "error");
-        return;
-    }
-
+const SiswaModule = {
+  async loadAndRender() {
     try {
-        const { error } = await supabaseClient.from('siswa').insert([{ nisn, nama, kelas, password }]);
-        if (error) throw error;
-        
-        document.getElementById('siswa-nisn').value = '';
-        document.getElementById('siswa-nama').value = '';
-        document.getElementById('siswa-kelas').value = '';
-        document.getElementById('siswa-pass').value = '';
-        
-        showToast("Siswa berhasil ditambahkan!", "success");
-        renderSiswaTable();
+      console.log("[SiswaModule] Menarik data siswa dari Supabase...");
+      State.siswaList = await DB.fetchSiswa();
+      console.log("[SiswaModule] Data siswa dimuat:", State.siswaList.length, "orang");
+      this.renderTable();
     } catch (err) {
-        showToast("Gagal menambah siswa: " + err.message, "error");
+      console.error("[SiswaModule] Error render siswa:", err.message);
     }
-}
+  },
 
-async function deleteSiswa(id) {
-    if (!confirm("Hapus data siswa ini?")) return;
-    try {
-        const { error } = await supabaseClient.from('siswa').delete().eq('id', id);
-        if (error) throw error;
-        showToast("Siswa dihapus.", "success");
-        renderSiswaTable();
-    } catch (err) {
-        showToast("Gagal menghapus siswa: " + err.message, "error");
+  renderTable() {
+    const container = document.getElementById('siswa-list-container');
+    if (!container) return;
+
+    if (!State.siswaList || State.siswaList.length === 0) {
+      container.innerHTML = `
+        <div class="p-6 text-center text-xs text-amber-700 bg-amber-50 rounded-xl border border-amber-200">
+          <p class="font-bold">Belum ada data siswa di database Supabase.</p>
+          <p class="mt-1 text-slate-500">Pastikan tabel "siswa" di Supabase sudah terisi data.</p>
+        </div>`;
+      return;
     }
-}
 
-function printStudentExamCards() {
-    fetchAllRows('siswa', 'siswa').then(students => {
-        if (!students || students.length === 0) {
-            alert("Tidak ada data siswa untuk dicetak.");
-            return;
-        }
+    let html = `
+      <table class="w-full text-left border-collapse text-xs">
+        <thead>
+          <tr class="bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase">
+            <th class="p-3 text-center w-10">
+              <input type="checkbox" onchange="SiswaModule.toggleSelectAll(this.checked)" class="rounded">
+            </th>
+            <th class="p-3">No</th>
+            <th class="p-3">NISN / Username</th>
+            <th class="p-3">Nama Siswa</th>
+            <th class="p-3">Kelas</th>
+            <th class="p-3">Password</th>
+            <th class="p-3 text-center">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 font-medium text-slate-700">
+    `;
 
-        let printHtml = `
-            <div style="font-family: Arial, sans-serif; padding: 20px;">
-                <div style="text-align: center; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 20px;">
-                    <h2>KARTU PESERTA UJIAN CBT</h2>
-                    <h3>${APP_CONFIG.SCHOOL_NAME}</h3>
-                    <p>${APP_CONFIG.EXAM_TITLE} - Tahun Ajaran ${APP_CONFIG.ACADEMIC_YEAR}</p>
-                </div>
-                <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center;">
-        `;
-
-        students.forEach(s => {
-            printHtml += `
-                <div style="width: 320px; border: 1.5px dashed #333; border-radius: 8px; padding: 15px; box-sizing: border-box; background: #fff;">
-                    <div style="font-size: 11px; font-weight: bold; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 8px;">
-                        KARTU LOGIN UJIAN CBT
-                    </div>
-                    <table style="font-size: 12px; width: 100%;">
-                        <tr><td style="width: 80px;">Nama</td><td>: <b>${s.nama}</b></td></tr>
-                        <tr><td>NISN</td><td>: <b>${s.nisn}</b></td></tr>
-                        <tr><td>Kelas</td><td>: <b>${s.kelas}</b></td></tr>
-                        <tr><td>Password</td><td>: <span style="font-family: monospace; background: #eee; padding: 2px 6px; font-weight: bold;">${s.password}</span></td></tr>
-                    </table>
-                    <div style="font-size: 10px; text-align: center; margin-top: 10px; color: #555;">
-                        * Simpan kartu ini dengan baik dan jangan dibagikan ke peserta lain.
-                    </div>
-                </div>
-            `;
-        });
-
-        printHtml += `</div></div>`;
-        document.getElementById('print-area').innerHTML = printHtml;
-        window.print();
+    State.siswaList.forEach((s, idx) => {
+      html += `
+        <tr class="hover:bg-slate-50 transition">
+          <td class="p-3 text-center">
+            <input type="checkbox" name="chk-siswa-kartu" value="${s.id_siswa}" class="chk-siswa-item rounded">
+          </td>
+          <td class="p-3 font-bold text-slate-500">${idx + 1}</td>
+          <td class="p-3 font-mono font-bold text-ocean-800">${s.nisn}</td>
+          <td class="p-3 font-bold text-slate-800">${s.nama}</td>
+          <td class="p-3"><span class="bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded">${s.kelas}</span></td>
+          <td class="p-3 font-mono text-slate-500">${s.pass || 'smk123'}</td>
+          <td class="p-3 text-center">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${s.status === 'Aktif' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">
+              ${s.status || 'Aktif'}
+            </span>
+          </td>
+        </tr>
+      `;
     });
-}
 
-window.renderSiswaTable = renderSiswaTable;
-window.handleAddSiswa = handleAddSiswa;
-window.deleteSiswa = deleteSiswa;
-window.printStudentExamCards = printStudentExamCards;
+    html += `</tbody></table>`;
+    container.innerHTML = html;
+  },
+
+  toggleSelectAll(checked) {
+    const checkboxes = document.querySelectorAll('.chk-siswa-item');
+    checkboxes.forEach(cb => cb.checked = checked);
+  },
+
+  printSelectedKartu() {
+    const selectedNodes = document.querySelectorAll('.chk-siswa-item:checked');
+    const selectedIds = Array.from(selectedNodes).map(cb => cb.value);
+
+    if (selectedIds.length === 0) {
+      alert("Silakan centang minimal 1 siswa untuk mencetak kartu!");
+      return;
+    }
+
+    const selectedSiswa = State.siswaList.filter(s => selectedIds.includes(String(s.id_siswa)));
+    
+    // Buka jendela cetak kartu baru
+    const printWindow = window.open('', '_blank');
+    let kartuHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Cetak Kartu Login SMKN 1 Wakatobi</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+          @page { size: A4; margin: 10mm; }
+          .card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        </style>
+      </head>
+      <body class="p-4 bg-white text-slate-800" onload="window.print()">
+        <div class="card-grid">
+    `;
+
+    selectedSiswa.forEach(s => {
+      const ttlSiswa = s.TTL || s.ttl || '-';
+      kartuHtml += `
+        <div class="border-2 border-slate-800 rounded-xl p-3.5 bg-slate-50 text-xs break-inside-avoid">
+          <div class="text-center border-b-2 border-dashed border-slate-400 pb-2 mb-2.5 leading-tight">
+            <div class="font-extrabold text-[13px] text-blue-950 uppercase">KARTU LOGIN</div>
+            <div class="font-bold text-[11px] text-slate-800 uppercase">PENILAIAN SUMATIF AKHIR SEMESTER GANJIL</div>
+            <div class="font-semibold text-[10px] text-slate-600 uppercase">TAHUN AJARAN 2026/2027</div>
+          </div>
+          <div class="flex items-start gap-3">
+            <!-- Kotak Foto 3x4 di Samping Kiri -->
+            <div class="w-16 h-20 shrink-0 border border-dashed border-slate-500 bg-white rounded flex flex-col items-center justify-center text-[9px] font-bold text-slate-400 text-center leading-tight mt-0.5">
+              <span>FOTO</span>
+              <span>3 x 4</span>
+            </div>
+            <!-- Identitas Peserta di Samping Kanan -->
+            <div class="space-y-1 flex-1 min-w-0 text-[11px]">
+              <div class="flex"><span class="w-24 shrink-0 font-semibold">Nama Sekolah</span><span class="mr-1">:</span><strong class="truncate">SMKN 1 Wakatobi</strong></div>
+              <div class="flex"><span class="w-24 shrink-0 font-semibold">Nama Peserta</span><span class="mr-1">:</span><strong class="truncate">${s.nama}</strong></div>
+              <div class="flex"><span class="w-24 shrink-0 font-semibold">Kelas</span><span class="mr-1">:</span><strong>${s.kelas}</strong></div>
+              <div class="flex"><span class="w-24 shrink-0 font-semibold">Username</span><span class="mr-1">:</span><strong class="font-mono text-blue-800">${s.nisn}</strong></div>
+              <div class="flex"><span class="w-24 shrink-0 font-semibold">Password</span><span class="mr-1">:</span><strong class="font-mono text-emerald-700">${s.pass || 'smk123'}</strong></div>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    kartuHtml += `</div></body></html>`;
+    printWindow.document.write(kartuHtml);
+    printWindow.document.close();
+  }
+};
+
+window.SiswaModule = SiswaModule;

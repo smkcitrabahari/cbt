@@ -1,23 +1,21 @@
 {
-  "name": "CBT Semi-Online - Sistem Ujian Sekolah",
-  "short_name": "CBT Ujian",
-  "description": "Aplikasi Computer-Based Test (CBT) PWA Semi-Online dengan sinkronisasi otomatis.",
+  "name": "SMKN1Wakatobi - CBT System",
+  "short_name": "CBT-SMKN1",
+  "description": "Aplikasi Ujian Penilaian Sumatif SMKN 1 Wakatobi",
   "start_url": "./index.html",
-  "scope": "./",
   "display": "standalone",
-  "orientation": "portrait-primary",
   "background_color": "#0f172a",
-  "theme_color": "#1e3a8a",
-  "categories": ["education", "productivity"],
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3426/3426653.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/3429/3429149.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3426/3426653.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/3429/3429149.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
