@@ -641,10 +641,10 @@ const RekapModule = {
         <div class="flex justify-between items-end text-xs pt-2">
           <div class="text-left w-60">
             <p>Mengetahui,</p>
-            <p class="font-bold">Plt. Kepala Sekolah</p>
+            <p class="font-bold">Kepala Sekolah</p>
             <div class="h-16"></div>
-            <p class="font-bold underline">Abdul Kaharuddin, S.Pd.I.</p>
-            <p>NIP. 197511222010011007</p>
+            <p class="font-bold underline">Rahmawati, S.S., Gr.</p>
+            <p>NIP. -</p>
           </div>
           <div class="text-left w-64">
             <p>Wangi-Wangi, ${tglStr}</p>
@@ -750,10 +750,10 @@ const RekapModule = {
         <div class="flex justify-between items-end text-xs pt-2">
           <div class="text-left w-60">
             <p>Mengetahui,</p>
-            <p class="font-bold">Plt. Kepala Sekolah</p>
+            <p class="font-bold">Kepala Sekolah</p>
             <div class="h-16"></div>
-            <p class="font-bold underline">Abdul Kaharuddin, S.Pd.I.</p>
-            <p class="text-[10px] text-slate-500">NIP. 197511222010011007</p>
+            <p class="font-bold underline">Rahmawati, S.S., Gr.</p>
+            <p class="text-[10px] text-slate-500">NIP. -</p>
           </div>
           <div class="text-left w-64">
             <p>Wangi-Wangi, ${tglStr}</p>
@@ -866,10 +866,10 @@ const RekapModule = {
         <div class="flex justify-between items-end text-xs pt-4">
           <div class="text-left w-56">
             <p>Mengetahui,</p>
-            <p class="font-bold">Plt. Kepala Sekolah</p>
+            <p class="font-bold">Kepala Sekolah</p>
             <div class="h-16"></div>
-            <p class="font-bold underline">Abdul Kaharuddin, S.Pd.I.</p>
-            <p class="text-[10px] text-slate-500">NIP. 197511222010011007</p>
+            <p class="font-bold underline">Rahmawati, S.S., Gr.</p>
+            <p class="text-[10px] text-slate-500">NIP. -</p>
           </div>
 
           <div class="text-left w-64">
