@@ -864,7 +864,7 @@ const RekapModule = {
       return `
         <div class="${sheetIdx > 0 ? 'page-break' : ''}">
           <div class="mb-3 border-b-4 border-double border-slate-900 pb-2 text-center">
-            <img src="${kopUrl}" alt="Kop Surat SMKN 1 Wakatobi" class="w-full max-h-28 object-contain mx-auto"
+            <img src="${kopUrl}" alt="Kop Surat SMK Citra Bahari Wakatobi" class="w-full max-h-28 object-contain mx-auto"
                  onerror="this.style.display='none';">
           </div>
 
@@ -1010,7 +1010,7 @@ const RekapModule = {
       <html lang="id">
       <head>
         <meta charset="UTF-8">
-        <title>REKAPITULASI HASIL UJIAN CBT - SMKN 1 WAKATOBI</title>
+        <title>REKAPITULASI HASIL UJIAN CBT - SMK CITRA BAHARI WAKATOBI</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
           @page { size: A4 portrait; margin: 10mm; }
@@ -1020,7 +1020,7 @@ const RekapModule = {
       <body class="p-4 bg-white" onload="window.print()">
         
         <div class="mb-4 border-b-4 border-double border-slate-800 pb-2 text-center">
-          <img src="${kopUrl}" alt="Kop Surat SMKN 1 Wakatobi" class="w-full max-h-32 object-contain mx-auto" 
+          <img src="${kopUrl}" alt="Kop Surat SMK Citra Bahari Wakatobi" class="w-full max-h-32 object-contain mx-auto" 
                onerror="this.style.display='none'; document.getElementById('fallback-header').style.display='block';">
           
           <div id="fallback-header" class="hidden text-center">
