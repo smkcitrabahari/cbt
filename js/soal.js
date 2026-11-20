@@ -633,7 +633,7 @@ const SoalModule = {
       </head>
       <body class="p-4 bg-white" onload="window.print()">
         <div class="mb-4 border-b-4 border-double border-slate-900 pb-2 text-center">
-          <img src="${kopUrl}" alt="Kop Surat SMKN 1 Wakatobi" class="w-full max-h-32 object-contain mx-auto"
+          <img src="${kopUrl}" alt="Kop Surat SMK Citra Bahari Wakatobi" class="w-full max-h-32 object-contain mx-auto"
                onerror="this.style.display='none'; document.getElementById('fallback-header').style.display='block';">
           <div id="fallback-header" class="hidden text-center">
             <h1 class="font-extrabold text-sm uppercase">PEMERINTAH PROVINSI SULAWESI TENGGARA</h1>
@@ -932,7 +932,7 @@ const SoalModule = {
       <body class="p-4 bg-white" onload="window.print()">
         
         <div class="mb-4 border-b-4 border-double border-slate-900 pb-2 text-center">
-          <img src="${kopUrl}" alt="Kop Surat SMKN 1 Wakatobi" class="w-full max-h-32 object-contain mx-auto" 
+          <img src="${kopUrl}" alt="Kop Surat SMK Citra Bahari Wakatobi" class="w-full max-h-32 object-contain mx-auto" 
                onerror="this.style.display='none'; document.getElementById('fallback-header').style.display='block';">
           
           <div id="fallback-header" class="hidden text-center">
@@ -946,7 +946,7 @@ const SoalModule = {
         <div class="border border-slate-800 rounded-lg p-3 mb-6 bg-slate-50 text-xs">
           <div class="grid grid-cols-2 gap-2">
             <div><strong>Mata Pelajaran:</strong> ${mapel}</div>
-            <div><strong>Satuan Pendidikan:</strong> SMKN 1 Wakatobi</div>
+            <div><strong>Satuan Pendidikan:</strong> SMK Citra Bahari Wakatobi</div>
             <div><strong>Kelas Target:</strong> ${kelas}</div>
             <div><strong>Bentuk Soal:</strong> Pilihan Ganda</div>
             <div><strong>Jumlah Soal:</strong> ${questionsToPrint.length} Butir</div>
