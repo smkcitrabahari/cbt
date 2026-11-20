@@ -1,5 +1,32 @@
 const RekapModule = {
   pieChartInstance: null,
+  currentHasilList: [],
+
+  normalizeText(str) {
+    return String(str || '').replace(/\s+/g, ' ').trim().toUpperCase();
+  },
+
+  getKopUrl() {
+    if (typeof DB !== 'undefined' && typeof DB.getKopSekolahUrl === 'function') {
+      return DB.getKopSekolahUrl();
+    }
+    return (typeof CONFIG !== 'undefined' && CONFIG.KOP_SEKOLAH_URL)
+      ? CONFIG.KOP_SEKOLAH_URL
+      : 'https://nbwpnhshhpfqtmbwewgk.supabase.co/storage/v1/object/public/media-sekolah/kop_sekolah.png';
+  },
+
+  async getKepalaSekolah() {
+    if (typeof JadwalModule !== 'undefined' && JadwalModule.lastKepalaSekolah && !JadwalModule.lastKepalaSekolah.nama.startsWith('.')) {
+      return JadwalModule.lastKepalaSekolah;
+    }
+    if (typeof DB !== 'undefined' && typeof DB.getKepalaSekolah === 'function') {
+      return await DB.getKepalaSekolah();
+    }
+    return {
+      nama: '..................................................',
+      nip: '............................................'
+    };
+  },
 
   getGuruPairs() {
     if (!State.currentUser || State.currentUser.role !== 'guru') return [];
@@ -34,26 +61,25 @@ const RekapModule = {
     const pairs = this.getGuruPairs();
     if (pairs.length === 0) return false;
 
-    const mUpper = String(targetMapel || '').trim().toUpperCase();
+    const mUpper = this.normalizeText(targetMapel);
     if (!targetKelas) {
-      return pairs.some(p => p.mapel.toUpperCase() === mUpper);
+      return pairs.some(p => this.normalizeText(p.mapel) === mUpper);
     }
 
-    const kUpper = String(targetKelas).trim().toUpperCase();
-    return pairs.some(p => p.mapel.toUpperCase() === mUpper && (p.kelas === '*' || p.kelas.toUpperCase() === kUpper));
+    const kUpper = this.normalizeText(targetKelas);
+    return pairs.some(p => this.normalizeText(p.mapel) === mUpper && (p.kelas === '*' || this.normalizeText(p.kelas) === kUpper));
   },
 
   isKelasAllowedForGuru(targetKelas) {
     if (!State.currentUser || State.currentUser.role !== 'guru') return true;
     const pairs = this.getGuruPairs();
     if (pairs.length === 0) return false;
-    const kUpper = String(targetKelas || '').trim().toUpperCase();
-    return pairs.some(p => p.kelas === '*' || p.kelas.toUpperCase() === kUpper);
+    const kUpper = this.normalizeText(targetKelas);
+    return pairs.some(p => p.kelas === '*' || this.normalizeText(p.kelas) === kUpper);
   },
 
-  // --- HELPER: KUNCI PENCOCOKAN UNIK SISWA (NAMA + KELAS) ---
   makeStudentMatchKey(nama, kelas) {
-    return `${String(nama || '').trim().toUpperCase()}___${String(kelas || '').trim().toUpperCase()}`;
+    return `${this.normalizeText(nama)}___${this.normalizeText(kelas)}`;
   },
 
   async fetchAndNormalizeHasil() {
@@ -120,7 +146,6 @@ const RekapModule = {
       let countMengerjakan = 0;
       let countMelanggar = 0;
 
-      // Gunakan kunci gabungan NAMA + KELAS agar 100% sinkron antara tabel siswa dan hasil_ujian
       const statusPerSiswa = {};
       hasilList.forEach(h => {
         const key = this.makeStudentMatchKey(h.nama_siswa, h.kelas);
@@ -344,19 +369,28 @@ const RekapModule = {
     if (!container) return;
 
     try {
+      if (typeof MapelModule !== 'undefined' && MapelModule.ensureMapelLoaded) {
+        await MapelModule.ensureMapelLoaded();
+      } else if (!State.mapelList || State.mapelList.length === 0) {
+        State.mapelList = await DB.fetchMapel();
+      }
+
       if (!State.siswaList || State.siswaList.length === 0) {
         State.siswaList = await DB.fetchSiswa();
       }
 
       let hasilList = await this.fetchAndNormalizeHasil();
-      hasilList = hasilList.filter(h => h.status_selesai !== 'MENGERJAKAN');
 
       if (State.currentUser && State.currentUser.role === 'guru') {
         hasilList = hasilList.filter(h => this.isAllowedForCurrentUser(h.mapel, h.kelas));
       }
 
       const kelasSet = new Set(hasilList.map(h => h.kelas).filter(Boolean));
-      const mapelSet = new Set(hasilList.map(h => h.mapel).filter(Boolean));
+      const masterMapels = (typeof MapelModule !== 'undefined' && MapelModule.getMapelListForCurrentUser)
+        ? MapelModule.getMapelListForCurrentUser()
+        : [...new Set((State.mapelList || []).map(m => String(m || '').trim()).filter(Boolean))];
+      const mapelSet = new Set(masterMapels);
+      hasilList.forEach(h => { if (h.mapel) mapelSet.add(h.mapel); });
 
       if (State.currentUser && State.currentUser.role === 'guru') {
         this.getGuruPairs().forEach(p => {
@@ -365,22 +399,19 @@ const RekapModule = {
         });
       }
 
-      let htmlControls = `
+      const htmlControls = `
         <div class="flex flex-wrap items-center justify-between gap-3 mb-4 p-3 bg-slate-50 rounded-xl border">
           <div class="flex flex-wrap items-center gap-2">
             <select id="rekap-filter-kelas" onchange="RekapModule.applyFilters()" class="border px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-700">
               <option value="ALL">-- Semua Kelas --</option>
-              ${Array.from(kelasSet).sort().map(k => `<option value="${k}">${k}</option>`).join('')}
+              ${Array.from(kelasSet).sort((a, b) => a.localeCompare(b, 'id')).map(k => `<option value="${k}">${k}</option>`).join('')}
             </select>
             <select id="rekap-filter-mapel" onchange="RekapModule.applyFilters()" class="border px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-700">
               <option value="ALL">-- Semua Mapel --</option>
-              ${Array.from(mapelSet).sort().map(m => `<option value="${m}">${m}</option>`).join('')}
+              ${Array.from(mapelSet).sort((a, b) => a.localeCompare(b, 'id')).map(m => `<option value="${m}">${m}</option>`).join('')}
             </select>
             <button type="button" onclick="RekapModule.printBeritaAcara()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg shadow transition">
               📋 Berita Acara
-            </button>
-            <button type="button" onclick="RekapModule.printDaftarHadir()" class="bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg shadow transition">
-              ✍️ Daftar Hadir
             </button>
           </div>
           <div class="text-xs text-slate-500 font-bold">
@@ -399,6 +430,20 @@ const RekapModule = {
     }
   },
 
+  toggleRekapGroup(groupId) {
+    const groupEl = document.getElementById(groupId);
+    const iconBtn = document.getElementById(`btn-rekap-icon-${groupId}`);
+    if (!groupEl) return;
+
+    if (groupEl.classList.contains('hidden')) {
+      groupEl.classList.remove('hidden');
+      if (iconBtn) iconBtn.innerHTML = `<i class="fa-solid fa-chevron-up text-xs text-amber-300"></i>`;
+    } else {
+      groupEl.classList.add('hidden');
+      if (iconBtn) iconBtn.innerHTML = `<i class="fa-solid fa-chevron-down text-xs"></i>`;
+    }
+  },
+
   applyFilters() {
     const containerData = document.getElementById('rekap-table-data');
     if (!containerData || !this.currentHasilList) return;
@@ -409,10 +454,10 @@ const RekapModule = {
     let filtered = this.currentHasilList;
 
     if (filterKelas !== 'ALL') {
-      filtered = filtered.filter(h => String(h.kelas).trim().toUpperCase() === filterKelas.toUpperCase());
+      filtered = filtered.filter(h => this.normalizeText(h.kelas) === this.normalizeText(filterKelas));
     }
     if (filterMapel !== 'ALL') {
-      filtered = filtered.filter(h => String(h.mapel).trim().toUpperCase() === filterMapel.toUpperCase());
+      filtered = filtered.filter(h => this.normalizeText(h.mapel) === this.normalizeText(filterMapel));
     }
 
     const countElem = document.getElementById('rekap-total-count');
@@ -420,59 +465,215 @@ const RekapModule = {
 
     if (filtered.length === 0) {
       containerData.innerHTML = `
-        <div class="p-4 text-center text-xs text-slate-500 bg-slate-50 rounded-lg border">
+        <div class="p-6 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border">
           Tidak ada data hasil ujian yang sesuai dengan filter.
         </div>`;
       return;
     }
 
-    let html = `
-      <table class="w-full text-left border-collapse text-xs">
-        <thead>
-          <tr class="bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase">
-            <th class="p-3 text-center">NO</th>
-            <th class="p-3">NAMA SISWA</th>
-            <th class="p-3">KELAS</th>
-            <th class="p-3">MATA PELAJARAN</th>
-            <th class="p-3 text-center">NILAI AKHIR</th>
-            <th class="p-3 text-center">PELANGGARAN</th>
-            <th class="p-3 text-center">STATUS</th>
-            <th class="p-3 text-center">AKSI</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100 font-medium text-slate-700">
-    `;
+    const groupedMap = {};
+    filtered.forEach(h => {
+      const kelasName = String(h.kelas || 'Tanpa Kelas').trim();
+      const mapelName = String(h.mapel || 'Tanpa Mapel').trim();
+      const key = `${kelasName}___${mapelName}`;
 
-    filtered.forEach((h, idx) => {
-      const safeNama = String(h.nama_siswa).replace(/'/g, "\\'");
-      const safeMapel = String(h.mapel).replace(/'/g, "\\'");
-
-      html += `
-        <tr class="hover:bg-slate-50 transition">
-          <td class="p-3 text-center font-bold text-slate-500">${idx + 1}</td>
-          <td class="p-3 font-bold text-slate-800">${h.nama_siswa}</td>
-          <td class="p-3"><span class="bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded">${h.kelas}</span></td>
-          <td class="p-3 font-semibold text-slate-700">${h.mapel}</td>
-          <td class="p-3 text-center font-extrabold text-sm text-emerald-700">${h.nilai}</td>
-          <td class="p-3 text-center"><span class="font-bold text-amber-700">${h.jumlah_pelanggaran}x</span></td>
-          <td class="p-3 text-center">
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${h.status_selesai === 'DIDISKUALIFIKASI' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">
-              ${h.status_selesai}
-            </span>
-          </td>
-          <td class="p-3 text-center">
-            <button onclick="RekapModule.resetHasilSiswa(${h.id}, '${safeNama}', '${safeMapel}')" 
-                    title="Reset & Izinkan Ujian Ulang"
-                    class="bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-rose-200 transition inline-flex items-center gap-1">
-              <span>🔄 Reset</span>
-            </button>
-          </td>
-        </tr>
-      `;
+      if (!groupedMap[key]) {
+        groupedMap[key] = {
+          kelas: kelasName,
+          mapel: mapelName,
+          items: []
+        };
+      }
+      groupedMap[key].items.push(h);
     });
 
-    html += `</tbody></table>`;
-    containerData.innerHTML = html;
+    const sortedKeys = Object.keys(groupedMap).sort((a, b) => {
+      const gA = groupedMap[a];
+      const gB = groupedMap[b];
+      const cmpKelas = gA.kelas.localeCompare(gB.kelas, 'id');
+      if (cmpKelas !== 0) return cmpKelas;
+      return gA.mapel.localeCompare(gB.mapel, 'id');
+    });
+
+    containerData.innerHTML = '';
+    let groupIdx = 0;
+
+    sortedKeys.forEach(key => {
+      groupIdx++;
+      const group = groupedMap[key];
+      const listSiswa = group.items.slice().sort((a, b) =>
+        String(a.nama_siswa || '').localeCompare(String(b.nama_siswa || ''), 'id')
+      );
+
+      const safeGroupId = `rekap-group-${groupIdx}`;
+      const encKelas = encodeURIComponent(group.kelas);
+      const encMapel = encodeURIComponent(group.mapel);
+
+      const finishedItems = listSiswa.filter(x => x.status_selesai !== 'MENGERJAKAN');
+      const mengerjakanCount = listSiswa.length - finishedItems.length;
+      const scores = finishedItems.map(x => Number(x.nilai) || 0);
+      const avgScore = scores.length > 0 ? (scores.reduce((s, v) => s + v, 0) / scores.length).toFixed(1) : '0.0';
+      const tuntasCount = scores.filter(s => s >= 75).length;
+
+      let rowsHtml = '';
+      listSiswa.forEach((h, idx) => {
+        const safeNama = String(h.nama_siswa).replace(/'/g, "\\'");
+        const safeMapel = String(h.mapel).replace(/'/g, "\\'");
+        const isMengerjakan = h.status_selesai === 'MENGERJAKAN';
+        const isDiskualifikasi = h.status_selesai === 'DIDISKUALIFIKASI';
+
+        let statusBadgeClass = 'bg-emerald-100 text-emerald-700';
+        if (isMengerjakan) statusBadgeClass = 'bg-blue-100 text-blue-700 animate-pulse';
+        if (isDiskualifikasi) statusBadgeClass = 'bg-rose-100 text-rose-700';
+
+        rowsHtml += `
+          <tr class="hover:bg-slate-50 transition ${isMengerjakan ? 'bg-blue-50/40' : ''}">
+            <td class="p-2.5 text-center font-bold text-slate-500">${idx + 1}</td>
+            <td class="p-2.5 font-bold text-slate-800">${h.nama_siswa}</td>
+            <td class="p-2.5 text-center font-mono text-slate-600">${h.nisn || '-'}</td>
+            <td class="p-2.5 text-center font-extrabold text-sm ${isMengerjakan ? 'text-blue-600' : (Number(h.nilai) >= 75 ? 'text-emerald-700' : 'text-rose-600')}">
+              ${isMengerjakan ? '-' : h.nilai}
+            </td>
+            <td class="p-2.5 text-center"><span class="font-bold text-amber-700">${h.jumlah_pelanggaran}x</span></td>
+            <td class="p-2.5 text-center">
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${statusBadgeClass}">
+                ${h.status_selesai}
+              </span>
+            </td>
+            <td class="p-2.5 text-center">
+              <button onclick="RekapModule.resetHasilSiswa(${h.id}, '${safeNama}', '${safeMapel}')" 
+                      title="Reset & Izinkan Ujian Ulang"
+                      class="bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-rose-200 transition inline-flex items-center gap-1">
+                <span>🔄 Reset</span>
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+
+      const infoMengerjakan = mengerjakanCount > 0
+        ? ` • <span class="text-sky-300 font-bold">Mengerjakan: ${mengerjakanCount}</span>`
+        : '';
+
+      const groupBox = document.createElement('div');
+      groupBox.className = "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-3 transition hover:border-ocean-300";
+      groupBox.innerHTML = `
+        <div class="p-3.5 bg-ocean-900 text-white flex flex-wrap justify-between items-center gap-3 cursor-pointer select-none"
+             onclick="RekapModule.toggleRekapGroup('${safeGroupId}')">
+          <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center font-extrabold text-xs text-teal-300 flex-shrink-0">
+              ${groupIdx}
+            </div>
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="bg-amber-400/20 text-amber-200 text-[11px] px-2.5 py-0.5 rounded-full font-extrabold border border-amber-300/40">
+                  Kelas: ${group.kelas}
+                </span>
+                <h4 class="font-bold text-sm tracking-wide text-white">${group.mapel}</h4>
+              </div>
+              <p class="text-[11px] text-ocean-200 mt-0.5">
+                Tercatat: <strong>${listSiswa.length} Siswa</strong>${infoMengerjakan} • Rata-Rata: <strong>${avgScore}</strong> • Tuntas (≥75): <strong>${tuntasCount}/${finishedItems.length}</strong>
+              </p>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-1.5" onclick="event.stopPropagation()">
+            <button type="button"
+                    onclick="RekapModule.exportPDF('${encKelas}', '${encMapel}')"
+                    title="Cetak Rekap Nilai Kelas Ini"
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow transition flex items-center gap-1">
+              <span>🖨️ Cetak Nilai</span>
+            </button>
+
+            <button type="button"
+                    onclick="RekapModule.printBeritaAcara('${encKelas}', '${encMapel}')"
+                    title="Cetak Berita Acara Ujian Kelas Ini"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow transition hidden sm:flex items-center gap-1">
+              <span>📋 Berita Acara</span>
+            </button>
+
+            <button type="button"
+                    onclick="RekapModule.deleteGroupHasil('${encKelas}', '${encMapel}', ${listSiswa.length})"
+                    title="Hapus Seluruh Data Nilai & Sesi Mengerjakan Kelas & Mapel Ini"
+                    class="bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow transition flex items-center gap-1">
+              <span>🗑️ Hapus Data</span>
+            </button>
+
+            <button id="btn-rekap-icon-${safeGroupId}"
+                    type="button"
+                    onclick="RekapModule.toggleRekapGroup('${safeGroupId}')"
+                    class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition ml-1">
+              <i class="fa-solid fa-chevron-down text-xs"></i>
+            </button>
+          </div>
+        </div>
+
+        <div id="${safeGroupId}" class="hidden p-3 bg-slate-50 border-t border-slate-200 overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs bg-white rounded-xl overflow-hidden border border-slate-200">
+            <thead>
+              <tr class="bg-slate-100 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase">
+                <th class="p-2.5 text-center w-10">NO</th>
+                <th class="p-2.5">NAMA SISWA</th>
+                <th class="p-2.5 text-center">NISN</th>
+                <th class="p-2.5 text-center">NILAI AKHIR</th>
+                <th class="p-2.5 text-center">PELANGGARAN</th>
+                <th class="p-2.5 text-center">STATUS</th>
+                <th class="p-2.5 text-center">AKSI</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 font-medium text-slate-700">
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      containerData.appendChild(groupBox);
+    });
+  },
+
+  async deleteGroupHasil(encodedKelas, encodedMapel, jumlahRecord) {
+    const kelas = decodeURIComponent(encodedKelas);
+    const mapel = decodeURIComponent(encodedMapel);
+
+    const konfirmasi = confirm(
+      `PERINGATAN PENGHAPUSAN MASSAL DATA NILAI!\n\n` +
+      `Kelas          : ${kelas}\n` +
+      `Mata Pelajaran : ${mapel}\n` +
+      `Jumlah Data    : ${jumlahRecord} Siswa\n\n` +
+      `Seluruh riwayat, status mengerjakan, & nilai ujian pada kelas dan mata pelajaran ini akan DIHAPUS PERMANEN dari database.\n` +
+      `(Gunakan fitur ini untuk membersihkan data hasil Simulasi / Gladi Bersih sebelum ujian utama).\n\n` +
+      `Apakah Anda yakin ingin menghapus semua data tersebut?`
+    );
+
+    if (!konfirmasi) return;
+
+    try {
+      const recordsToDelete = (this.currentHasilList || []).filter(h =>
+        this.normalizeText(h.kelas) === this.normalizeText(kelas) &&
+        this.normalizeText(h.mapel) === this.normalizeText(mapel)
+      );
+
+      const idsToDelete = recordsToDelete.map(h => h.id).filter(Boolean);
+      if (idsToDelete.length === 0) {
+        alert("Tidak ditemukan ID data yang dapat dihapus.");
+        return;
+      }
+
+      if (typeof DB.deleteHasilUjianMassal === 'function') {
+        await DB.deleteHasilUjianMassal(idsToDelete);
+      } else {
+        for (const id of idsToDelete) {
+          await DB.deleteHasilUjian(id);
+        }
+      }
+
+      alert(`Berhasil menghapus seluruh ${idsToDelete.length} data ujian untuk Kelas "${kelas}" - Mapel "${mapel}"!`);
+      await this.renderRekapNilai();
+      await this.refreshMonitoringData();
+    } catch (err) {
+      alert("Gagal menghapus data nilai kelas: " + err.message);
+    }
   },
 
   async resetHasilSiswa(id, namaSiswa, mapel) {
@@ -485,7 +686,7 @@ const RekapModule = {
       `KONFIRMASI RESET UJIAN SISWA\n\n` +
       `Nama Siswa : ${namaSiswa}\n` +
       `Mata Ujian : ${mapel}\n\n` +
-      `Nilai dan status selesai siswa ini akan DIHAPUS sehingga siswa dapat mengikuti ujian ulang dari awal.\n\n` +
+      `Nilai dan status ujian siswa ini akan DIHAPUS sehingga siswa dapat mengikuti ujian ulang dari awal.\n\n` +
       `Apakah Anda yakin ingin melanjutkan?`
     );
 
@@ -514,14 +715,16 @@ const RekapModule = {
     }
 
     try {
-      const listGuru = await DB.fetchGuru();
+      const listGuru = (typeof GuruModule !== 'undefined' && Array.isArray(GuruModule.guruList) && GuruModule.guruList.length > 0)
+        ? GuruModule.guruList
+        : (Array.isArray(DB._cachedGuruList) && DB._cachedGuruList.length > 0 ? DB._cachedGuruList : await DB.fetchGuru());
       if (filterMapel !== 'ALL') {
-        const targetM = filterMapel.toUpperCase();
+        const targetM = this.normalizeText(filterMapel);
         const foundG = listGuru.find(g => {
           const pairsG = typeof GuruModule !== 'undefined' ? GuruModule.getGuruPairs({ ...g, role: 'guru' }) : [];
           return pairsG.some(p =>
-            p.mapel.toUpperCase() === targetM &&
-            (filterKelas === 'ALL' || p.kelas === '*' || p.kelas.toUpperCase() === filterKelas.toUpperCase())
+            this.normalizeText(p.mapel) === targetM &&
+            (filterKelas === 'ALL' || p.kelas === '*' || this.normalizeText(p.kelas) === this.normalizeText(filterKelas))
           );
         });
         if (foundG) {
@@ -534,55 +737,206 @@ const RekapModule = {
     return { nama: namaGuruTtd, nip: nipGuruTtd };
   },
 
-  async printBeritaAcara() {
-    const filterKelas = (document.getElementById('rekap-filter-kelas')?.value || 'ALL').trim();
-    const filterMapel = (document.getElementById('rekap-filter-mapel')?.value || 'ALL').trim();
+  async printBeritaAcara(encodedKelas = null, encodedMapel = null) {
+    const filterKelas = encodedKelas
+      ? decodeURIComponent(encodedKelas).trim()
+      : (document.getElementById('rekap-filter-kelas')?.value || 'ALL').trim();
+    const filterMapel = encodedMapel
+      ? decodeURIComponent(encodedMapel).trim()
+      : (document.getElementById('rekap-filter-mapel')?.value || 'ALL').trim();
 
     if (filterKelas === 'ALL' || filterMapel === 'ALL') {
-      alert("Silakan pilih spesifik Kelas dan Mata Pelajaran pada dropdown filter terlebih dahulu sebelum mencetak Berita Acara!");
+      alert("Silakan pilih spesifik Kelas dan Mata Pelajaran pada dropdown filter (atau klik tombol Berita Acara pada grup kelas) sebelum mencetak!");
       return;
     }
 
+    const kepsek = await this.getKepalaSekolah();
+    const kopUrl = this.getKopUrl();
+
+    let matchedAllocations = [];
+    if (typeof JadwalModule !== 'undefined') {
+      if (!Array.isArray(JadwalModule.lastGeneratedAllocation) || JadwalModule.lastGeneratedAllocation.length === 0) {
+        if (!State.schedules || State.schedules.length === 0) {
+          State.schedules = await DB.fetchSchedules();
+        }
+        if (typeof JadwalModule.buildRoomAndSupervisorAllocation === 'function') {
+          await JadwalModule.buildRoomAndSupervisorAllocation('ALL');
+        }
+      }
+
+      const normKelas = this.normalizeText(filterKelas);
+      const normMapel = this.normalizeText(filterMapel);
+      matchedAllocations = (JadwalModule.lastGeneratedAllocation || []).filter(a =>
+        this.normalizeText(a.kelas) === normKelas &&
+        String(a.mapel || '').split('/').some(mPart => this.normalizeText(mPart) === normMapel)
+      );
+    }
+
     const siswaList = State.siswaList && State.siswaList.length > 0 ? State.siswaList : await DB.fetchSiswa();
-    const pesertaKelas = siswaList.filter(s =>
-      String(s.status).toLowerCase() === 'aktif' &&
-      String(s.kelas).trim().toUpperCase() === filterKelas.toUpperCase()
-    );
+    const pesertaKelasAll = siswaList
+      .filter(s => String(s.status).toLowerCase() === 'aktif' && this.normalizeText(s.kelas) === this.normalizeText(filterKelas))
+      .sort((a, b) => String(a.nama || '').localeCompare(String(b.nama || ''), 'id'));
 
     const hasilList = await this.fetchAndNormalizeHasil();
-    const hasilPaket = hasilList.filter(h =>
-      String(h.kelas).trim().toUpperCase() === filterKelas.toUpperCase() &&
-      String(h.mapel).trim().toUpperCase() === filterMapel.toUpperCase()
+    const hasilPaketAll = hasilList.filter(h =>
+      this.normalizeText(h.kelas) === this.normalizeText(filterKelas) &&
+      this.normalizeText(h.mapel) === this.normalizeText(filterMapel)
     );
 
-    const hadirIds = new Set(hasilPaket.map(h => String(h.id_siswa || h.nisn || h.nama_siswa).trim().toUpperCase()));
-    const tidakHadirList = pesertaKelas.filter(s => {
-      const k1 = String(s.id_siswa || '').trim().toUpperCase();
-      const k2 = String(s.nisn || s.NISN || '').trim().toUpperCase();
-      const k3 = String(s.nama || '').trim().toUpperCase();
-      return !hadirIds.has(k1) && !hadirIds.has(k2) && !hadirIds.has(k3);
-    });
-
-    const jmlTerdaftar = pesertaKelas.length;
-    const jmlTidakHadir = tidakHadirList.length;
-    const jmlHadir = Math.max(0, jmlTerdaftar - jmlTidakHadir);
-    const pelanggarList = hasilPaket.filter(h => h.status_selesai === 'DIDISKUALIFIKASI' || Number(h.jumlah_pelanggaran) > 0);
-
-    const ttd = await this.resolvePenandatangan(filterMapel, filterKelas);
-    const kopUrl = "https://nbwpnhshhpfqtmbwewgk.supabase.co/storage/v1/object/public/media-sekolah/kop_sekolah.png";
+    const fallbackTtd = await this.resolvePenandatangan(filterMapel, filterKelas);
     const now = new Date();
-    const hariStr = now.toLocaleDateString('id-ID', { weekday: 'long' });
-    const tglStr = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const defaultHariStr = now.toLocaleDateString('id-ID', { weekday: 'long' });
+    const defaultTglStr = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
-    const tidakHadirText = tidakHadirList.length > 0
-      ? tidakHadirList.map((s, i) => `${i + 1}. ${s.nama} (NISN: ${s.nisn || s.NISN || '-'})`).join('<br>')
-      : 'Nihil (Seluruh peserta hadir mengikuti ujian)';
+    const roomSheets = matchedAllocations.length > 0
+      ? matchedAllocations.map(alloc => ({
+          ruangLabel: alloc.ruangLabel,
+          tanggalFormatted: alloc.tanggalFormatted || `${defaultHariStr}, ${defaultTglStr}`,
+          sesiWaktu: `${alloc.sesiLabel} (${alloc.jamMulai} - ${alloc.jamSelesai} WITA)`,
+          students: (Array.isArray(alloc.students) && alloc.students.length > 0) ? alloc.students : pesertaKelasAll,
+          pengawas1Nama: alloc.pengawas1Nama || fallbackTtd.nama,
+          pengawas1Nip: (alloc.pengawas1Nip && alloc.pengawas1Nip !== '-') ? alloc.pengawas1Nip : '............................................',
+          pengawas2Nama: alloc.pengawas2Nama || '..................................................',
+          pengawas2Nip: (alloc.pengawas2Nip && alloc.pengawas2Nip !== '-') ? alloc.pengawas2Nip : '............................................'
+        }))
+      : [{
+          ruangLabel: filterKelas,
+          tanggalFormatted: `${defaultHariStr}, ${defaultTglStr}`,
+          sesiWaktu: '-',
+          students: pesertaKelasAll,
+          pengawas1Nama: fallbackTtd.nama,
+          pengawas1Nip: (fallbackTtd.nip && fallbackTtd.nip !== '-') ? fallbackTtd.nip : '............................................',
+          pengawas2Nama: '..................................................',
+          pengawas2Nip: '............................................'
+        }];
 
-    const catatanPelanggaran = pelanggarList.length > 0
-      ? `Terdapat ${pelanggarList.length} peserta tercatat melanggar tata tertib keamanan CBT (${pelanggarList.map(p => `${p.nama_siswa}: ${p.status_selesai}`).join('; ')}).`
-      : 'Pelaksanaan ujian berjalan dengan tertib, aman, dan lancar tanpa kendala teknis yang berarti.';
+    const pagesHtml = roomSheets.map((sheet, sheetIdx) => {
+      const pesertaRuang = sheet.students || [];
+      const roomKeys = new Set();
+      pesertaRuang.forEach(s => {
+        const k1 = String(s.id_siswa || '').trim().toUpperCase();
+        const k2 = String(s.nisn || s.NISN || '').trim().toUpperCase();
+        const k3 = String(s.nama || '').trim().toUpperCase();
+        if (k1) roomKeys.add(k1);
+        if (k2) roomKeys.add(k2);
+        if (k3) roomKeys.add(k3);
+      });
+
+      const hasilRuang = matchedAllocations.length > 1
+        ? hasilPaketAll.filter(h => {
+            const hk1 = String(h.id_siswa || '').trim().toUpperCase();
+            const hk2 = String(h.nisn || '').trim().toUpperCase();
+            const hk3 = String(h.nama_siswa || '').trim().toUpperCase();
+            return roomKeys.has(hk1) || roomKeys.has(hk2) || roomKeys.has(hk3);
+          })
+        : hasilPaketAll;
+
+      const hadirIds = new Set();
+      hasilRuang.forEach(h => {
+        const hk1 = String(h.id_siswa || '').trim().toUpperCase();
+        const hk2 = String(h.nisn || '').trim().toUpperCase();
+        const hk3 = String(h.nama_siswa || '').trim().toUpperCase();
+        if (hk1) hadirIds.add(hk1);
+        if (hk2) hadirIds.add(hk2);
+        if (hk3) hadirIds.add(hk3);
+      });
+
+      const tidakHadirList = pesertaRuang.filter(s => {
+        const k1 = String(s.id_siswa || '').trim().toUpperCase();
+        const k2 = String(s.nisn || s.NISN || '').trim().toUpperCase();
+        const k3 = String(s.nama || '').trim().toUpperCase();
+        return !hadirIds.has(k1) && !hadirIds.has(k2) && !hadirIds.has(k3);
+      });
+
+      const jmlTerdaftar = pesertaRuang.length;
+      const jmlTidakHadir = tidakHadirList.length;
+      const jmlHadir = Math.max(0, jmlTerdaftar - jmlTidakHadir);
+      const pelanggarList = hasilRuang.filter(h => h.status_selesai === 'DIDISKUALIFIKASI' || Number(h.jumlah_pelanggaran) > 0);
+
+      const tidakHadirText = tidakHadirList.length > 0
+        ? tidakHadirList.map((s, i) => `${i + 1}. ${s.nama} (NISN: ${s.nisn || s.NISN || '-'})`).join('<br>')
+        : 'Nihil (Seluruh peserta hadir mengikuti ujian)';
+
+      const catatanPelanggaran = pelanggarList.length > 0
+        ? `Terdapat ${pelanggarList.length} peserta tercatat melanggar tata tertib keamanan CBT (${pelanggarList.map(p => `${p.nama_siswa}: ${p.status_selesai}`).join('; ')}).`
+        : 'Pelaksanaan ujian berjalan dengan tertib, aman, dan lancar tanpa kendala teknis yang berarti.';
+
+      return `
+        <div class="${sheetIdx > 0 ? 'page-break' : ''}">
+          <div class="mb-3 border-b-4 border-double border-slate-900 pb-2 text-center">
+            <img src="${kopUrl}" alt="Kop Surat SMKN 1 Wakatobi" class="w-full max-h-28 object-contain mx-auto"
+                 onerror="this.style.display='none';">
+          </div>
+
+          <div class="text-center mb-4">
+            <h4 class="font-bold text-sm uppercase underline tracking-wide">BERITA ACARA PELAKSANAAN UJIAN SUMATIF BERBASIS KOMPUTER (CBT)</h4>
+            <p class="text-xs mt-0.5 font-semibold">SMK NEGERI 1 WAKATOBI &bull; TAHUN AJARAN 2026/2027</p>
+          </div>
+
+          <p class="text-justify text-xs mb-3">
+            Pada hari/tanggal <strong>${sheet.tanggalFormatted}</strong>${sheet.sesiWaktu !== '-' ? ` sesi <strong>${sheet.sesiWaktu}</strong>` : ''}, telah diselenggarakan Ujian Sumatif Berbasis Komputer (<em>Computer Based Test</em>) di <strong>SMK Negeri 1 Wakatobi</strong> dengan rincian sebagai berikut:
+          </p>
+
+          <table class="w-full text-xs mb-3">
+            <tr><td class="py-0.5 w-48">1. Satuan Pendidikan</td><td class="w-4">:</td><td class="font-bold">SMK Negeri 1 Wakatobi</td></tr>
+            <tr><td class="py-0.5">2. Ruang Ujian</td><td>:</td><td class="font-bold">${sheet.ruangLabel}</td></tr>
+            <tr><td class="py-0.5">3. Mata Pelajaran</td><td>:</td><td class="font-bold">${filterMapel}</td></tr>
+            <tr><td class="py-0.5">4. Kelas / Rombel</td><td>:</td><td class="font-bold">${filterKelas}</td></tr>
+            <tr><td class="py-0.5">5. Jumlah Peserta Terdaftar</td><td>:</td><td><strong>${jmlTerdaftar}</strong> orang</td></tr>
+            <tr><td class="py-0.5">6. Jumlah Peserta Hadir</td><td>:</td><td><strong>${jmlHadir}</strong> orang</td></tr>
+            <tr><td class="py-0.5">7. Jumlah Peserta Tidak Hadir</td><td>:</td><td><strong>${jmlTidakHadir}</strong> orang</td></tr>
+          </table>
+
+          <div class="mb-2.5">
+            <p class="font-bold text-xs mb-1">Daftar Peserta Tidak Hadir:</p>
+            <div class="border border-slate-400 rounded p-2 text-xs bg-slate-50">${tidakHadirText}</div>
+          </div>
+
+          <div class="mb-4">
+            <p class="font-bold text-xs mb-1">Catatan Selama Pelaksanaan Ujian:</p>
+            <div class="border border-slate-400 rounded p-2 text-xs min-h-[44px]">${catatanPelanggaran}</div>
+          </div>
+
+          <p class="text-justify text-xs mb-4">
+            Demikian Berita Acara ini dibuat dengan sesungguhnya untuk dipergunakan sebagaimana mestinya.
+          </p>
+
+          <div class="ttd-section">
+            <div class="ttd-pengawas-row">
+              <div class="ttd-box">
+                Pengawas Ruang 1,
+                <div class="ttd-space"></div>
+                <strong><u>${sheet.pengawas1Nama}</u></strong><br>
+                NIP. ${sheet.pengawas1Nip}
+              </div>
+              <div class="ttd-box">
+                Pengawas Ruang 2,
+                <div class="ttd-space"></div>
+                <strong><u>${sheet.pengawas2Nama}</u></strong><br>
+                NIP. ${sheet.pengawas2Nip}
+              </div>
+            </div>
+
+            <div class="ttd-kepsek-center">
+              <div class="ttd-box-center">
+                Mengetahui,<br>
+                Kepala SMK Negeri 1 Wakatobi,
+                <div class="ttd-space"></div>
+                <strong><u>${kepsek.nama}</u></strong><br>
+                NIP. ${kepsek.nip}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
 
     const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Pop-up diblokir oleh browser! Izinkan pop-up untuk mencetak Berita Acara.");
+      return;
+    }
+
     const html = `
       <!DOCTYPE html>
       <html lang="id">
@@ -591,178 +945,19 @@ const RekapModule = {
         <title>BERITA ACARA UJIAN - ${filterMapel} (${filterKelas})</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
-          @page { size: A4 portrait; margin: 15mm; }
-          body { font-family: 'Times New Roman', serif; color: #0f172a; font-size: 11.5pt; line-height: 1.5; }
-        </style>
-      </head>
-      <body class="p-4 bg-white" onload="window.print()">
-        <div class="mb-4 border-b-4 border-double border-slate-900 pb-2 text-center">
-          <img src="${kopUrl}" alt="Kop Surat SMKN 1 Wakatobi" class="w-full max-h-32 object-contain mx-auto"
-               onerror="this.style.display='none'; document.getElementById('fallback-ba').style.display='block';">
-          <div id="fallback-ba" class="hidden text-center">
-            <h1 class="font-bold text-sm uppercase">PEMERINTAH PROVINSI SULAWESI TENGGARA</h1>
-            <h2 class="font-bold text-base uppercase">DINAS PENDIDIKAN DAN KEBUDAYAAN</h2>
-            <h3 class="font-extrabold text-lg uppercase">SMK NEGERI 1 WAKATOBI</h3>
-          </div>
-        </div>
-
-        <div class="text-center mb-5">
-          <h4 class="font-bold text-sm uppercase underline tracking-wide">BERITA ACARA PELAKSANAAN UJIAN SUMATIF BERBASIS KOMPUTER (CBT)</h4>
-          <p class="text-xs mt-0.5">Tahun Ajaran 2026/2027</p>
-        </div>
-
-        <p class="text-justify mb-3">
-          Pada hari ini <strong>${hariStr}</strong> tanggal <strong>${tglStr}</strong>, telah diselenggarakan Ujian Sumatif Berbasis Komputer (<em>Computer Based Test</em>) di <strong>SMK Negeri 1 Wakatobi</strong> dengan rincian sebagai berikut:
-        </p>
-
-        <table class="w-full text-xs mb-4">
-          <tr><td class="py-1 w-48">1. Satuan Pendidikan</td><td class="w-4">:</td><td class="font-bold">SMK Negeri 1 Wakatobi</td></tr>
-          <tr><td class="py-1">2. Mata Pelajaran</td><td>:</td><td class="font-bold">${filterMapel}</td></tr>
-          <tr><td class="py-1">3. Kelas / Rombel</td><td>:</td><td class="font-bold">${filterKelas}</td></tr>
-          <tr><td class="py-1">4. Jumlah Peserta Terdaftar</td><td>:</td><td><strong>${jmlTerdaftar}</strong> orang</td></tr>
-          <tr><td class="py-1">5. Jumlah Peserta Hadir</td><td>:</td><td><strong>${jmlHadir}</strong> orang</td></tr>
-          <tr><td class="py-1">6. Jumlah Peserta Tidak Hadir</td><td>:</td><td><strong>${jmlTidakHadir}</strong> orang</td></tr>
-        </table>
-
-        <div class="mb-3">
-          <p class="font-bold text-xs mb-1">Daftar Peserta Tidak Hadir:</p>
-          <div class="border border-slate-400 rounded p-2.5 text-xs bg-slate-50">${tidakHadirText}</div>
-        </div>
-
-        <div class="mb-6">
-          <p class="font-bold text-xs mb-1">Catatan Selama Pelaksanaan Ujian:</p>
-          <div class="border border-slate-400 rounded p-2.5 text-xs min-h-[54px]">${catatanPelanggaran}</div>
-        </div>
-
-        <p class="text-justify text-xs mb-6">
-          Demikian Berita Acara ini dibuat dengan sesungguhnya untuk dipergunakan sebagaimana mestinya.
-        </p>
-
-        <div class="flex justify-between items-end text-xs pt-2">
-          <div class="text-left w-60">
-            <p>Mengetahui,</p>
-            <p class="font-bold">Kepala Sekolah</p>
-            <div class="h-16"></div>
-            <p class="font-bold underline">Rahmawati, S.S., Gr.</p>
-            <p>NIP. -</p>
-          </div>
-          <div class="text-left w-64">
-            <p>Wangi-Wangi, ${tglStr}</p>
-            <p class="font-bold">Pengawas Ruang / Guru Mapel</p>
-            <div class="h-16"></div>
-            <p class="font-bold underline">${ttd.nama}</p>
-            <p>NIP. ${ttd.nip}</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-    printWindow.document.write(html);
-    printWindow.document.close();
-  },
-
-  async printDaftarHadir() {
-    const filterKelas = (document.getElementById('rekap-filter-kelas')?.value || 'ALL').trim();
-    const filterMapel = (document.getElementById('rekap-filter-mapel')?.value || 'ALL').trim();
-
-    if (filterKelas === 'ALL') {
-      alert("Silakan pilih Kelas pada dropdown filter terlebih dahulu sebelum mencetak Daftar Hadir!");
-      return;
-    }
-
-    const siswaList = State.siswaList && State.siswaList.length > 0 ? State.siswaList : await DB.fetchSiswa();
-    const pesertaKelas = siswaList
-      .filter(s => String(s.status).toLowerCase() === 'aktif' && String(s.kelas).trim().toUpperCase() === filterKelas.toUpperCase())
-      .sort((a, b) => String(a.nama).localeCompare(String(b.nama)));
-
-    if (pesertaKelas.length === 0) {
-      alert(`Tidak ditemukan data siswa aktif pada kelas ${filterKelas}.`);
-      return;
-    }
-
-    const ttd = await this.resolvePenandatangan(filterMapel, filterKelas);
-    const kopUrl = "https://nbwpnhshhpfqtmbwewgk.supabase.co/storage/v1/object/public/media-sekolah/kop_sekolah.png";
-    const tglStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-
-    let rowsHtml = '';
-    pesertaKelas.forEach((s, idx) => {
-      const ttdCell = idx % 2 === 0
-        ? `<td class="p-2 border border-slate-400 text-left w-28">${idx + 1}. ..........</td><td class="p-2 border border-slate-400 w-28"></td>`
-        : `<td class="p-2 border border-slate-400 w-28"></td><td class="p-2 border border-slate-400 text-left w-28">${idx + 1}. ..........</td>`;
-
-      rowsHtml += `
-        <tr>
-          <td class="p-2 border border-slate-400 text-center font-bold">${idx + 1}</td>
-          <td class="p-2 border border-slate-400 text-center font-mono">${s.nisn || s.NISN || '-'}</td>
-          <td class="p-2 border border-slate-400 font-bold">${s.nama}</td>
-          ${ttdCell}
-        </tr>
-      `;
-    });
-
-    const printWindow = window.open('', '_blank');
-    const html = `
-      <!DOCTYPE html>
-      <html lang="id">
-      <head>
-        <meta charset="UTF-8">
-        <title>DAFTAR HADIR PESERTA UJIAN - ${filterKelas}</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <style>
           @page { size: A4 portrait; margin: 12mm; }
-          body { font-family: 'Inter', sans-serif; color: #0f172a; font-size: 10pt; }
+          @media print { .page-break { page-break-before: always; } }
+          body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; font-size: 11px; line-height: 1.45; }
+          .ttd-section { width: 100%; margin-top: 14px; page-break-inside: avoid; }
+          .ttd-pengawas-row { width: 100%; display: flex; justify-content: space-between; padding: 0 24px; box-sizing: border-box; }
+          .ttd-box { width: 235px; text-align: left; font-size: 10.5px; line-height: 1.35; }
+          .ttd-kepsek-center { width: 100%; margin-top: 10px; display: flex; justify-content: center; }
+          .ttd-box-center { width: 260px; text-align: center; font-size: 10.5px; line-height: 1.35; }
+          .ttd-space { height: 42px; }
         </style>
       </head>
-      <body class="p-4 bg-white" onload="window.print()">
-        <div class="mb-4 border-b-4 border-double border-slate-900 pb-2 text-center">
-          <img src="${kopUrl}" alt="Kop Surat SMKN 1 Wakatobi" class="w-full max-h-32 object-contain mx-auto"
-               onerror="this.style.display='none'; document.getElementById('fallback-dh').style.display='block';">
-          <div id="fallback-dh" class="hidden text-center">
-            <h1 class="font-extrabold text-sm uppercase">PEMERINTAH PROVINSI SULAWESI TENGGARA</h1>
-            <h2 class="font-bold text-base uppercase">DINAS PENDIDIKAN DAN KEBUDAYAAN</h2>
-            <h3 class="font-black text-lg uppercase">SMK NEGERI 1 WAKATOBI</h3>
-          </div>
-        </div>
-
-        <div class="text-center mb-4">
-          <h4 class="font-bold text-sm uppercase underline">DAFTAR HADIR PESERTA UJIAN SUMATIF BERBASIS KOMPUTER (CBT)</h4>
-          <p class="text-xs text-slate-600 mt-1">
-            Kelas: <strong>${filterKelas}</strong> | 
-            Mata Pelajaran: <strong>${filterMapel === 'ALL' ? 'Semua Mata Pelajaran' : filterMapel}</strong> | 
-            Tanggal: <strong>${tglStr}</strong>
-          </p>
-        </div>
-
-        <table class="w-full text-left border-collapse border border-slate-400 text-xs mb-6">
-          <thead>
-            <tr class="bg-slate-100 text-[10px] font-bold uppercase text-center">
-              <th class="p-2 border border-slate-400 w-10">NO</th>
-              <th class="p-2 border border-slate-400 w-28">NISN</th>
-              <th class="p-2 border border-slate-400">NAMA LENGKAP PESERTA</th>
-              <th class="p-2 border border-slate-400" colspan="2">TANDA TANGAN</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
-
-        <div class="flex justify-between items-end text-xs pt-2">
-          <div class="text-left w-60">
-            <p>Mengetahui,</p>
-            <p class="font-bold">Kepala Sekolah</p>
-            <div class="h-16"></div>
-            <p class="font-bold underline">Rahmawati, S.S., Gr.</p>
-            <p class="text-[10px] text-slate-500">NIP. -</p>
-          </div>
-          <div class="text-left w-64">
-            <p>Wangi-Wangi, ${tglStr}</p>
-            <p class="font-bold">Pengawas Ruang / Guru Mapel</p>
-            <div class="h-16"></div>
-            <p class="font-bold underline">${ttd.nama}</p>
-            <p class="text-[10px] text-slate-500">NIP. ${ttd.nip}</p>
-          </div>
-        </div>
+      <body class="p-3 bg-white" onload="setTimeout(function(){ window.print(); }, 400)">
+        ${pagesHtml}
       </body>
       </html>
     `;
@@ -770,11 +965,17 @@ const RekapModule = {
     printWindow.document.close();
   },
 
-  async exportPDF() {
-    const filterKelas = (document.getElementById('rekap-filter-kelas')?.value || 'ALL').trim();
-    const filterMapel = (document.getElementById('rekap-filter-mapel')?.value || 'ALL').trim();
+  async exportPDF(encodedKelas = null, encodedMapel = null) {
+    const filterKelas = encodedKelas
+      ? decodeURIComponent(encodedKelas).trim()
+      : (document.getElementById('rekap-filter-kelas')?.value || 'ALL').trim();
+    const filterMapel = encodedMapel
+      ? decodeURIComponent(encodedMapel).trim()
+      : (document.getElementById('rekap-filter-mapel')?.value || 'ALL').trim();
 
-    let listToPrint = this.currentHasilList || await this.fetchAndNormalizeHasil();
+    let listToPrint = this.currentHasilList && this.currentHasilList.length > 0
+      ? this.currentHasilList
+      : await this.fetchAndNormalizeHasil();
     listToPrint = listToPrint.filter(h => h.status_selesai !== 'MENGERJAKAN');
 
     if (State.currentUser && State.currentUser.role === 'guru') {
@@ -782,19 +983,24 @@ const RekapModule = {
     }
 
     if (filterKelas !== 'ALL') {
-      listToPrint = listToPrint.filter(h => String(h.kelas).trim().toUpperCase() === filterKelas.toUpperCase());
+      listToPrint = listToPrint.filter(h => this.normalizeText(h.kelas) === this.normalizeText(filterKelas));
     }
     if (filterMapel !== 'ALL') {
-      listToPrint = listToPrint.filter(h => String(h.mapel).trim().toUpperCase() === filterMapel.toUpperCase());
+      listToPrint = listToPrint.filter(h => this.normalizeText(h.mapel) === this.normalizeText(filterMapel));
     }
 
     if (listToPrint.length === 0) {
-      alert("Tidak ada data hasil ujian yang dapat dicetak!");
+      alert("Tidak ada data hasil ujian yang sudah selesai untuk dicetak!");
       return;
     }
 
+    listToPrint = listToPrint.slice().sort((a, b) =>
+      String(a.nama_siswa || '').localeCompare(String(b.nama_siswa || ''), 'id')
+    );
+
     const ttd = await this.resolvePenandatangan(filterMapel, filterKelas);
-    const kopUrl = "https://nbwpnhshhpfqtmbwewgk.supabase.co/storage/v1/object/public/media-sekolah/kop_sekolah.png";
+    const kepsek = await this.getKepalaSekolah();
+    const kopUrl = this.getKopUrl();
     const tglSekarang = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
     const printWindow = window.open('', '_blank');
@@ -866,10 +1072,10 @@ const RekapModule = {
         <div class="flex justify-between items-end text-xs pt-4">
           <div class="text-left w-56">
             <p>Mengetahui,</p>
-            <p class="font-bold">Kepala Sekolah</p>
+            <p class="font-bold">Kepala SMK Negeri 1 Wakatobi</p>
             <div class="h-16"></div>
-            <p class="font-bold underline">Rahmawati, S.S., Gr.</p>
-            <p class="text-[10px] text-slate-500">NIP. -</p>
+            <p class="font-bold underline">${kepsek.nama}</p>
+            <p class="text-[10px] text-slate-500">NIP. ${kepsek.nip}</p>
           </div>
 
           <div class="text-left w-64">

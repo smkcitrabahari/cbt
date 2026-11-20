@@ -1,5 +1,8 @@
 const DB = {
   client: null,
+  _cachedKopUrl: null,
+  _cachedKepsek: null,
+  _cachedGuruList: null,
 
   initImmediate() {
     if (this.client) return this.client;
@@ -47,6 +50,91 @@ const DB = {
     });
   },
 
+  // --- SINGLE-SOURCE CACHE: KOP SEKOLAH (0-1 QUERY PER SESI UNTUK SEMUA MENU CETAK) ---
+  getKopSekolahUrl() {
+    if (this._cachedKopUrl) return this._cachedKopUrl;
+
+    try {
+      const saved = sessionStorage.getItem('exam_cached_kop_url');
+      if (saved) {
+        this._cachedKopUrl = saved;
+        return saved;
+      }
+    } catch (e) {}
+
+    const cfg = window.CONFIG || (typeof CONFIG !== 'undefined' ? CONFIG : null);
+    const baseUrl = (cfg && cfg.SUPABASE_URL)
+      ? String(cfg.SUPABASE_URL).replace(/\/+$/, '')
+      : 'https://nbwpnhshhpfqtmbwewgk.supabase.co';
+
+    const resolvedUrl = (cfg && cfg.KOP_SEKOLAH_URL)
+      ? String(cfg.KOP_SEKOLAH_URL).trim()
+      : `${baseUrl}/storage/v1/object/public/media-sekolah/kop_sekolah.png`;
+
+    this._cachedKopUrl = resolvedUrl;
+    try {
+      sessionStorage.setItem('exam_cached_kop_url', resolvedUrl);
+    } catch (e) {}
+
+    return resolvedUrl;
+  },
+
+  // --- SINGLE-SOURCE CACHE: KEPALA SEKOLAH DARI BARIS PERTAMA GURU ---
+  extractKepsekFromList(guruList) {
+    const list = Array.isArray(guruList) ? guruList : [];
+    if (list.length === 0) return null;
+    const firstRow = list[0];
+    const nama = String(firstRow.nama_guru || firstRow.nama || '').trim();
+    if (!nama) return null;
+    const rawNip = String(firstRow.nip || '').trim();
+    const nip = (rawNip && rawNip !== '-') ? rawNip : '............................................';
+    return { nama, nip };
+  },
+
+  async getKepalaSekolah() {
+    if (this._cachedKepsek && this._cachedKepsek.nama) {
+      return this._cachedKepsek;
+    }
+
+    // Cek memori modul lain terlebih dahulu tanpa query database
+    const existingList = (typeof GuruModule !== 'undefined' && Array.isArray(GuruModule.guruList) && GuruModule.guruList.length > 0)
+      ? GuruModule.guruList
+      : (Array.isArray(this._cachedGuruList) && this._cachedGuruList.length > 0 ? this._cachedGuruList : null);
+
+    if (existingList) {
+      const parsed = this.extractKepsekFromList(existingList);
+      if (parsed) {
+        this._cachedKepsek = parsed;
+        return parsed;
+      }
+    }
+
+    // Jika belum ada di memori mana pun, ambil cukup 1 baris pertama saja (limit 1)
+    const client = await this.getClient();
+    if (client) {
+      try {
+        const { data, error } = await client
+          .from('guru')
+          .select('nama_guru, nip')
+          .order('id_guru', { ascending: true })
+          .limit(1);
+
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const parsed = this.extractKepsekFromList(data);
+          if (parsed) {
+            this._cachedKepsek = parsed;
+            return parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
+    return {
+      nama: '..................................................',
+      nip: '............................................'
+    };
+  },
+
   // --- HELPER PAGINATION: AMBIL SELURUH DATA TANPA BATAS 1000 BARIS SUPABASE ---
   async fetchAllRows(tableName, orderCol = 'id', ascending = true) {
     const client = await this.getClient();
@@ -64,7 +152,6 @@ const DB = {
       const { data, error } = await query.range(from, from + step - 1);
 
       if (error) {
-        // Fallback jika kolom orderCol tidak ada di tabel
         if (from === 0 && orderCol) {
           const fallbackRes = await client.from(tableName).select('*').range(0, step - 1);
           if (!fallbackRes.error && fallbackRes.data) {
@@ -183,7 +270,7 @@ const DB = {
         console.warn("[DB Helper] Gagal fetch tabel guru:", error.message);
         return [];
       }
-      return (data || []).map(g => ({
+      const mapped = (data || []).map(g => ({
         id_guru: g.id_guru || g.ID_GURU || g.id,
         nama_guru: g.nama_guru || g.NAMA_GURU || g.nama || '-',
         nip: String(g.nip || g.NIP || '-').trim(),
@@ -195,6 +282,12 @@ const DB = {
         status_kepegawaian: g.status_kepegawaian || g.STATUS_KEPEGAWAIAN || 'PNS',
         status: g.status || g.STATUS || 'Aktif'
       }));
+
+      this._cachedGuruList = mapped;
+      const parsedKepsek = this.extractKepsekFromList(mapped);
+      if (parsedKepsek) this._cachedKepsek = parsedKepsek;
+
+      return mapped;
     } catch (err) {
       console.error("[DB Helper] Error fetchGuru:", err.message);
       return [];
@@ -206,6 +299,8 @@ const DB = {
     if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
     const { data, error } = await client.from('guru').insert([payload]);
     if (error) throw error;
+    this._cachedGuruList = null;
+    this._cachedKepsek = null;
     return data;
   },
 
@@ -213,6 +308,8 @@ const DB = {
     const client = await this.getClient();
     if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
     const { data, error } = await client.from('guru').update(payload).eq('id_guru', id_guru);
+    this._cachedGuruList = null;
+    this._cachedKepsek = null;
     if (error) {
       const resCap = await client.from('guru').update(payload).eq('ID_GURU', id_guru);
       if (resCap.error) {
@@ -229,6 +326,8 @@ const DB = {
     const client = await this.getClient();
     if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
     const { error } = await client.from('guru').delete().eq('id_guru', id_guru);
+    this._cachedGuruList = null;
+    this._cachedKepsek = null;
     if (error) {
       const resCap = await client.from('guru').delete().eq('ID_GURU', id_guru);
       if (resCap.error) {
@@ -361,7 +460,6 @@ const DB = {
     const numericId = /^\d+$/.test(rawId) ? Number(rawId) : null;
 
     const attempts = [
-      // 1. Kolom kapital ID_SISWA (angka) + lengkap
       ...(numericId !== null ? [{
         ID_SISWA: numericId,
         nama_siswa: payload.nama_siswa,
@@ -372,7 +470,6 @@ const DB = {
         status_selesai: payload.status_selesai,
         waktu_selesai: payload.waktu_selesai
       }] : []),
-      // 2. Kolom kapital ID_SISWA (string) + lengkap
       {
         ID_SISWA: rawId,
         nama_siswa: payload.nama_siswa,
@@ -383,7 +480,6 @@ const DB = {
         status_selesai: payload.status_selesai,
         waktu_selesai: payload.waktu_selesai
       },
-      // 3. Kolom huruf kecil id_siswa + lengkap
       {
         id_siswa: numericId !== null ? numericId : rawId,
         nama_siswa: payload.nama_siswa,
@@ -394,7 +490,6 @@ const DB = {
         status_selesai: payload.status_selesai,
         waktu_selesai: payload.waktu_selesai
       },
-      // 4. Minimal kolom wajib saja (ID_SISWA)
       {
         ID_SISWA: numericId !== null ? numericId : rawId,
         mapel: payload.mapel,
@@ -423,6 +518,22 @@ const DB = {
       if (errCap) throw errCap;
     }
     return true;
+  },
+
+  // --- HAPUS MASSAL HASIL UJIAN (1X QUERY UNTUK SELURUH RECORD PER KELAS & MAPEL) ---
+  async deleteHasilUjianMassal(ids = []) {
+    const client = await this.getClient();
+    if (!client) throw new Error("Database tidak terhubung. Periksa config.js dan koneksi internet.");
+
+    const validIds = (ids || []).filter(id => id !== null && id !== undefined && id !== '');
+    if (validIds.length === 0) return 0;
+
+    const { error } = await client.from('hasil_ujian').delete().in('id', validIds);
+    if (error) {
+      const { error: errCap } = await client.from('hasil_ujian').delete().in('ID', validIds);
+      if (errCap) throw errCap;
+    }
+    return validIds.length;
   }
 };
 
