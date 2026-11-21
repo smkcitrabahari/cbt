@@ -601,7 +601,7 @@ const SoalModule = {
     }
 
     const kisiList = questionsPkg.map((q, idx) => this.generateKisiKisiItem(q, idx));
-    const kopUrl = "https://nbwpnhshhpfqtmbwewgk.supabase.co/storage/v1/object/public/media-sekolah/kop_sekolah.png";
+    const kopUrl = "https://quuuaekcwblffuessuvf.supabase.co/storage/v1/object/public/media-sekolah/kop_sekolah.png";
     const guruNama = State.currentUser?.nama_guru || State.currentUser?.nama || 'Guru Mata Pelajaran';
     const printWindow = window.open('', '_blank');
 
