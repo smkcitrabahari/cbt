@@ -785,7 +785,7 @@ const JadwalModule = {
 
           <div class="ttd-wrap">
             <div class="ttd-box">
-              Wangi-Wangi, ${todayStr}<br>
+              Mandati II, ${todayStr}<br>
               Kepala SMK Citra Bahari Wakatobi,
               <div class="ttd-space"></div>
               <strong><u>${kepsek.nama}</u></strong><br>
@@ -1016,7 +1016,7 @@ const JadwalModule = {
 
         <div class="ttd-wrap">
           <div class="ttd-box">
-            Wangi-Wangi, ${todayStr}<br>
+            Mandati II, ${todayStr}<br>
             Kepala SMK Citra Bahari Wakatobi,
             <div class="ttd-space"></div>
             <strong><u>${kepsek.nama}</u></strong><br>
