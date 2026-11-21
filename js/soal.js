@@ -913,7 +913,7 @@ const SoalModule = {
       return;
     }
 
-    const kopUrl = "https://nbwpnhshhpfqtmbwewgk.supabase.co/storage/v1/object/public/media-sekolah/kop_sekolah.png";
+    const kopUrl = "https://quuuaekcwblffuessuvf.supabase.co/storage/v1/object/public/media-sekolah/kop_sekolah.png";
     const printWindow = window.open('', '_blank');
 
     let printHtml = `
