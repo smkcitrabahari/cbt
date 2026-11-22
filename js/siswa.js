@@ -106,6 +106,7 @@ const SiswaModule = {
             <div class="font-extrabold text-[13px] text-blue-950 uppercase">KARTU LOGIN</div>
             <div class="font-bold text-[11px] text-slate-800 uppercase">PENILAIAN SUMATIF AKHIR SEMESTER GANJIL</div>
             <div class="font-semibold text-[10px] text-slate-600 uppercase">TAHUN AJARAN 2026/2027</div>
+            <div class="font-semibold text-[10px] text-slate-600 lowercase">https://smkcitrabahari.github.io/cbt/</div>
           </div>
           <div class="flex items-start gap-3">
             <!-- Kotak Foto 3x4 di Samping Kiri -->
