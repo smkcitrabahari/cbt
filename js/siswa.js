@@ -87,7 +87,7 @@ const SiswaModule = {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Cetak Kartu Login SMKN 1 Wakatobi</title>
+        <title>Cetak Kartu Login SMK Citra Bahari Wakatobi</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
           @page { size: A4; margin: 10mm; }
@@ -115,7 +115,7 @@ const SiswaModule = {
             </div>
             <!-- Identitas Peserta di Samping Kanan -->
             <div class="space-y-1 flex-1 min-w-0 text-[11px]">
-              <div class="flex"><span class="w-24 shrink-0 font-semibold">Nama Sekolah</span><span class="mr-1">:</span><strong class="truncate">SMKN 1 Wakatobi</strong></div>
+              <div class="flex"><span class="w-24 shrink-0 font-semibold">Nama Sekolah</span><span class="mr-1">:</span><strong class="truncate">SMK Citra Bahari Wakatobi</strong></div>
               <div class="flex"><span class="w-24 shrink-0 font-semibold">Nama Peserta</span><span class="mr-1">:</span><strong class="truncate">${s.nama}</strong></div>
               <div class="flex"><span class="w-24 shrink-0 font-semibold">Kelas</span><span class="mr-1">:</span><strong>${s.kelas}</strong></div>
               <div class="flex"><span class="w-24 shrink-0 font-semibold">Username</span><span class="mr-1">:</span><strong class="font-mono text-blue-800">${s.nisn}</strong></div>
