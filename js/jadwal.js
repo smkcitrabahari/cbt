@@ -20,7 +20,7 @@ const JadwalModule = {
   },
 
   // Pengacakan deterministik berbasis seed agar hasil awal konsisten (tidak berubah tiap dibuka)
-  seededShuffle(array, seedStr = 'SMKN1WAKATOBI') {
+  seededShuffle(array, seedStr = 'SMKNCITRABAHARIWAKATOBI') {
     const arr = [...array];
     let h = 2166136261 >>> 0;
     for (let i = 0; i < seedStr.length; i++) {
@@ -788,7 +788,7 @@ const JadwalModule = {
   getPrintToolbarHtml() {
     return `
       <div class="no-print" style="background:#0f172a;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-radius:8px;">
-        <span style="font-size:12px;font-weight:bold;">Pratinjau Dokumen Siap Cetak — SMK Negeri 1 Wakatobi</span>
+        <span style="font-size:12px;font-weight:bold;">Pratinjau Dokumen Siap Cetak — SMK Citra Bahari Wakatobi</span>
         <div style="display:flex;gap:8px;">
           <button onclick="window.print()" style="background:#10b981;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-weight:bold;font-size:12px;cursor:pointer;">🖨️ Cetak / Simpan PDF</button>
           <button onclick="window.close()" style="background:#e11d48;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-weight:bold;font-size:12px;cursor:pointer;">✕ Tutup Tab Ini</button>
@@ -845,7 +845,7 @@ const JadwalModule = {
           <div class="room-banner">
             <div class="room-title">DAFTAR PESERTA UJIAN &mdash; RUANG ${String(rm.nomorRuang).padStart(2, '0')}</div>
             <div class="room-subtitle">KELAS / ROMBEL: ${rm.kelasLabel} &bull; JUMLAH PESERTA: ${rm.jumlahSiswa} SISWA</div>
-            <div class="room-school">UJIAN SUMATIF BERBASIS KOMPUTER (CBT) &bull; SMK NEGERI 1 WAKATOBI T.A. 2026/2027</div>
+            <div class="room-school">UJIAN SUMATIF BERBASIS KOMPUTER (CBT) &bull; SMK CITRA BAHARI WAKATOBI T.A. 2026/2027</div>
           </div>
 
           <table class="data-table">
@@ -869,7 +869,7 @@ const JadwalModule = {
           <div class="ttd-wrap">
             <div class="ttd-box">
               Wangi-Wangi Selatan, ${todayStr}<br>
-              Kepala SMK Negeri 1 Wakatobi,
+              Kepala SMK Citra Bahari Wakatobi,
               <div class="ttd-space"></div>
               <strong><u>${kepsek.nama}</u></strong><br>
               NIP. ${kepsek.nip}
@@ -890,7 +890,7 @@ const JadwalModule = {
       <html lang="id">
       <head>
         <meta charset="UTF-8">
-        <title>Daftar Peserta Per Ruangan (Tempel Pintu) - SMK Negeri 1 Wakatobi</title>
+        <title>Daftar Peserta Per Ruangan (Tempel Pintu) - SMK Citra Bahari Wakatobi</title>
         <style>
           @page { size: A4 portrait; margin: 11mm; }
           @media print {
@@ -1041,7 +1041,7 @@ const JadwalModule = {
       <html lang="id">
       <head>
         <meta charset="UTF-8">
-        <title>Jadwal Ujian & Kode Pengawas Ruang - SMK Negeri 1 Wakatobi</title>
+        <title>Jadwal Ujian & Kode Pengawas Ruang - SMK Citra Bahari Wakatobi</title>
         <style>
           @page { size: A4 landscape; margin: 9mm; }
           @media print { .no-print { display: none !important; } }
@@ -1068,7 +1068,7 @@ const JadwalModule = {
         <img src="${kopUrl}" class="kop" alt="Kop Sekolah" onerror="this.style.display='none'">
         <div class="title">
           <h2>JADWAL PELAKSANAAN UJIAN &amp; PEMBAGIAN PENGAWAS RUANG</h2>
-          <p>SMK NEGERI 1 WAKATOBI &bull; TAHUN AJARAN 2026/2027</p>
+          <p>SMK CITRA BAHARI WAKATOBI &bull; TAHUN AJARAN 2026/2027</p>
         </div>
 
         <table class="matrix">
@@ -1100,7 +1100,7 @@ const JadwalModule = {
         <div class="ttd-wrap">
           <div class="ttd-box">
             Wangi-Wangi Selatan, ${todayStr}<br>
-            Kepala SMK Negeri 1 Wakatobi,
+            Kepala SMK Citra Bahari Wakatobi,
             <div class="ttd-space"></div>
             <strong><u>${kepsek.nama}</u></strong><br>
             NIP. ${kepsek.nip}
@@ -1195,7 +1195,7 @@ const JadwalModule = {
           <img src="${kopUrl}" class="kop" alt="Kop Sekolah" onerror="this.style.display='none'">
           <div class="title">
             <h2>DAFTAR HADIR PENGAWAS RUANG UJIAN</h2>
-            <p>SMK NEGERI 1 WAKATOBI &bull; TAHUN AJARAN 2026/2027</p>
+            <p>SMK CITRA BAHARI WAKATOBI &bull; TAHUN AJARAN 2026/2027</p>
           </div>
 
           <div style="margin:6px 0 8px 0; font-size:11.5px; font-weight:bold;">
@@ -1220,7 +1220,7 @@ const JadwalModule = {
           <div class="ttd-wrap">
             <div class="ttd-box">
               Mengetahui,<br>
-              Kepala SMK Negeri 1 Wakatobi,
+              Kepala SMK Citra Bahari Wakatobi,
               <div class="ttd-space"></div>
               <strong><u>${kepsek.nama}</u></strong><br>
               NIP. ${kepsek.nip}
@@ -1241,7 +1241,7 @@ const JadwalModule = {
       <html lang="id">
       <head>
         <meta charset="UTF-8">
-        <title>Daftar Hadir Pengawas Ruang Ujian (Per Hari) - SMK Negeri 1 Wakatobi</title>
+        <title>Daftar Hadir Pengawas Ruang Ujian (Per Hari) - SMK Citra Bahari Wakatobi</title>
         <style>
           @page { size: A4 portrait; margin: 11mm; }
           @media print {
@@ -1347,7 +1347,7 @@ const JadwalModule = {
           <img src="${kopUrl}" class="kop" alt="Kop Sekolah" onerror="this.style.display='none'">
           <div class="title">
             <h2>DAFTAR HADIR PESERTA UJIAN</h2>
-            <p>SMK NEGERI 1 WAKATOBI &bull; TAHUN AJARAN 2026/2027</p>
+            <p>SMK CITRA BAHARI WAKATOBI &bull; TAHUN AJARAN 2026/2027</p>
           </div>
 
           <table class="meta-table">
@@ -1405,7 +1405,7 @@ const JadwalModule = {
             <div class="ttd-kepsek-center">
               <div class="ttd-box-center">
                 Mengetahui,<br>
-                Kepala SMK Negeri 1 Wakatobi,
+                Kepala SMK Citra Bahari Wakatobi,
                 <div class="ttd-space"></div>
                 <strong><u>${kepsek.nama}</u></strong><br>
                 NIP. ${kepsek.nip}
@@ -1427,7 +1427,7 @@ const JadwalModule = {
       <html lang="id">
       <head>
         <meta charset="UTF-8">
-        <title>Daftar Hadir Peserta Ujian per Ruang - SMK Negeri 1 Wakatobi</title>
+        <title>Daftar Hadir Peserta Ujian per Ruang - SMK Citra Bahari Wakatobi</title>
         <style>
           @page { size: A4 portrait; margin: 10mm; }
           @media print {
